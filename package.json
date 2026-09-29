@@ -1,0 +1,66 @@
+{
+  "name": "routine-notes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "String, a local notebook with a day log and a night diary",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "predev": "node scripts/copy-vditor.mjs",
+    "dev": "electron-vite dev",
+    "postinstall": "node scripts/copy-vditor.mjs",
+    "prebuild": "node scripts/copy-vditor.mjs",
+    "build": "electron-vite build",
+    "dist": "npm run build && node scripts/pack.mjs",
+    "release": "npm run build && node scripts/pack.mjs --publish",
+    "test": "tsx --test test/vault.test.ts test/handbook.test.ts test/seal.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "electron-updater": "^6.8.9",
+    "vditor": "^3.11.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "electron": "^35.2.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^3.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.3"
+  },
+  "build": {
+    "appId": "com.string.notes",
+    "productName": "String",
+    "executableName": "String",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "!Routine_Note/**",
+      "!release/**",
+      "!src/**",
+      "!test/**"
+    ],
+    "win": {
+      "icon": "resources/icon.ico",
+      "target": "nsis",
+      "signAndEditExecutable": true
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "String-Setup-${version}.${ext}"
+    }
+  }
+}
