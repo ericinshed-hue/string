@@ -17,7 +17,7 @@ export function TitleBar(props: Props) {
   return (
     <header className="titlebar">
       <div className="titlebar-group">
-        <img className="app-mark" src="/icon.png" alt="String" />
+        <img className="app-mark" src={new URL('icon.png', window.location.href).href} alt="String" />
         <button className={props.treeOpen ? 'icon-btn on' : 'icon-btn'} onClick={props.onToggleTree} title="Files" aria-label="Files">
           <IconFiles />
         </button>
