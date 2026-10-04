@@ -5,7 +5,7 @@ export function projectChat(messages: StoredMessage[]): UiMessage[] {
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i]
     if (message.role === 'user') {
-      ui.push({ id: `u-${i}`, role: 'user', content: message.content, tools: [] })
+      ui.push({ id: `u-${i}`, role: 'user', content: message.display ?? message.content, tools: [] })
       continue
     }
     if (message.role !== 'assistant') continue

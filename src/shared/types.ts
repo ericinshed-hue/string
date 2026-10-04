@@ -59,6 +59,12 @@ export type ShortcutBinding = {
   chord: string
 }
 
+export type Skill = {
+  id: string
+  name: string
+  instructions: string
+}
+
 export type PublicSettings = {
   vaultRoot: string | null
   suggestedVault: string | null
@@ -68,6 +74,8 @@ export type PublicSettings = {
   handbook: HandbookRule[]
   shortcuts: ShortcutBinding[]
   editorFont: string
+  skills: Skill[]
+  activated: boolean
   lastOpen: Record<Zone, string | null>
   lastZone: Zone
 }
@@ -112,6 +120,7 @@ export type StoredToolCall = {
 export type StoredMessage = {
   role: 'user' | 'assistant' | 'tool'
   content: string
+  display?: string
   toolCalls?: StoredToolCall[]
   toolCallId?: string
 }

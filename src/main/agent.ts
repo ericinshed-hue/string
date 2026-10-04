@@ -16,6 +16,7 @@ type RunOptions = {
   systemPrompt: string
   history: StoredMessage[]
   userText: string
+  userDisplay?: string
   signal: AbortSignal
   onEvent: (event: ChatEvent) => void
   onFilesChanged: () => void
@@ -294,7 +295,10 @@ async function streamCompletion(
 }
 
 export async function runAgent(options: RunOptions): Promise<StoredMessage[]> {
-  const messages: StoredMessage[] = [...options.history, { role: 'user', content: options.userText }]
+  const messages: StoredMessage[] = [
+    ...options.history,
+    { role: 'user', content: options.userText, display: options.userDisplay }
+  ]
   for (let round = 0; round < 20; round++) {
     const result = await streamCompletion(options, messages, (text) => {
       options.onEvent({ type: 'delta', sessionId: options.sessionId, text })

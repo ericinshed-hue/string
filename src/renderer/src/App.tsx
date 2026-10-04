@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { coerceEditorFont, editorFontStack } from '@shared/fonts'
 import { coerceHandbook, coerceShortcuts } from '@shared/handbook'
+import { coerceSkills } from '@shared/skills'
 import type { PublicSettings, TrashItem, TreeNode, Zone } from '@shared/types'
 import { AiDrawer } from './components/AiDrawer'
 import { EditorPane } from './components/EditorPane'
@@ -8,6 +9,7 @@ import { FileTree } from './components/FileTree'
 import { PasswordDialog } from './components/PasswordDialog'
 import { SearchModal } from './components/SearchModal'
 import { SettingsModal } from './components/SettingsModal'
+import { SetupWizard } from './components/SetupWizard'
 import { TitleBar } from './components/TitleBar'
 import { UpdateNotice } from './components/UpdateNotice'
 import { TrashPanel } from './components/TrashPanel'
@@ -388,6 +390,23 @@ export function App() {
   }
 
   if (booting || !settings) return <div className="boot" />
+  if (!settings.activated) {
+    return (
+      <div className="app" data-zone={zone}>
+        <header className="titlebar">
+          <span />
+          <span />
+          <div className="titlebar-group right">
+            <button className="win-btn" onClick={() => void window.routine.minimize()} aria-label="Minimize">–</button>
+            <button className="win-btn" onClick={() => void window.routine.maximize()} aria-label="Maximize">□</button>
+            <button className="win-btn close" onClick={() => void window.routine.close()} aria-label="Close">×</button>
+          </div>
+        </header>
+        <SetupWizard settings={settings} onReady={(next) => void adoptVault(next)} onToast={showToast} />
+        {toast ? <div className="toast">{toast}</div> : null}
+      </div>
+    )
+  }
   if (!settings.vaultRoot) {
     return (
       <div className="app" data-zone={zone}>
@@ -737,7 +756,8 @@ function withEditor(settings: PublicSettings): PublicSettings {
     ...settings,
     handbook: coerceHandbook(settings.handbook),
     shortcuts: coerceShortcuts(settings.shortcuts),
-    editorFont: coerceEditorFont(settings.editorFont)
+    editorFont: coerceEditorFont(settings.editorFont),
+    skills: coerceSkills(settings.skills)
   }
 }
 

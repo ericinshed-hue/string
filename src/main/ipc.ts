@@ -1,6 +1,7 @@
 import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { promises as fs } from 'fs'
-import type { ChatEvent, HandbookRule, ProfileInput, ShortcutBinding, Zone } from '../shared/types'
+import { applySkills } from '../shared/skills'
+import type { ChatEvent, HandbookRule, ProfileInput, ShortcutBinding, Skill, Zone } from '../shared/types'
 import { projectChat } from '../shared/chat'
 import { runAgent, runs } from './agent'
 import { createSession, loadDesk, openSession, readSession, removeSession, writeSession } from './history'
@@ -10,8 +11,10 @@ import { invalidateSearch, searchNotes } from './search'
 import {
   activeProfile,
   currentVault,
+  loadSettings,
   publicSettings,
   saveEditorSettings,
+  saveLicenseCode,
   saveProfileSettings,
   setLastOpen,
   setVaultRoot,
@@ -84,11 +87,16 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle(
     'settings:save-editor',
-    async (_event, handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string) => {
-      await saveEditorSettings(handbook, shortcuts, editorFont)
+    async (_event, handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string, skills: Skill[]) => {
+      await saveEditorSettings(handbook, shortcuts, editorFont, skills)
       return publicSettings()
     }
   )
+
+  ipcMain.handle('settings:activate', async (_event, code: string) => {
+    await saveLicenseCode(code)
+    return publicSettings()
+  })
 
   ipcMain.handle('vault:tree', async (_event, zone: Zone) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
@@ -263,6 +271,7 @@ export function registerIpc(win: BrowserWindow): void {
     if (!isZone(zone)) throw new Error('Invalid zone')
     const trimmed = text.trim()
     if (!trimmed) throw new Error('Enter a message')
+    const applied = applySkills(trimmed, (await loadSettings()).skills)
     if (runs.has(sessionId)) throw new Error('This chat is still replying')
     const profile = await activeProfile()
     if (!profile?.apiKey || !profile.baseURL || !profile.model) {
@@ -285,7 +294,8 @@ export function registerIpc(win: BrowserWindow): void {
         model: profile.model,
         systemPrompt: profile.systemPrompt,
         history,
-        userText: trimmed,
+        userText: applied.content,
+        userDisplay: applied.display,
         signal: controller.signal,
         onEvent: emit,
         onFilesChanged: () => {

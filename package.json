@@ -1,6 +1,6 @@
 {
   "name": "routine-notes",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "String, a local notebook with a day log and a night diary",
   "main": "./out/main/index.js",
@@ -12,7 +12,7 @@
     "build": "electron-vite build",
     "dist": "npm run build && node scripts/pack.mjs",
     "release": "npm run build && node scripts/pack.mjs --publish",
-    "test": "tsx --test test/vault.test.ts test/handbook.test.ts test/seal.test.ts",
+    "test": "tsx --test test/vault.test.ts test/handbook.test.ts test/seal.test.ts test/skills.test.ts test/license.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
@@ -56,9 +56,13 @@
       "signAndEditExecutable": true
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "String",
+      "license": "license.txt",
       "deleteAppDataOnUninstall": false,
       "artifactName": "String-Setup-${version}.${ext}"
     }

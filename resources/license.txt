@@ -1,0 +1,11 @@
+String
+
+This software is licensed to the person named in the activation code.
+You may install it on your own computers. You may not redistribute the
+installer or the activation code.
+
+Notes stay in the folder you choose. String does not upload them.
+API keys stay on this computer.
+
+The software is provided as is, without a warranty. You are responsible
+for the notes you write and for the API account you connect.

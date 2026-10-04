@@ -1,7 +1,19 @@
 import { useEffect, useState } from 'react'
 import { EDITOR_FONTS, editorFontStack } from '@shared/fonts'
 import { chordFromEvent, expandRule, SHORTCUT_LABELS } from '@shared/handbook'
-import type { HandbookRule, ProfileInput, PublicProfile, PublicSettings, ShortcutBinding } from '@shared/types'
+import type { HandbookRule, ProfileInput, PublicProfile, PublicSettings, ShortcutBinding, Skill } from '@shared/types'
+
+type Page = 'vault' | 'font' | 'api' | 'snippets' | 'shortcuts' | 'prompt' | 'skills'
+
+const PAGES: Array<{ id: Page; label: string; title: string }> = [
+  { id: 'vault', label: 'Vault', title: 'Vault' },
+  { id: 'font', label: 'Note font', title: 'Note font' },
+  { id: 'api', label: 'API', title: 'API' },
+  { id: 'snippets', label: 'Snippets', title: 'Snippets' },
+  { id: 'shortcuts', label: 'Shortcuts', title: 'Shortcuts' },
+  { id: 'prompt', label: 'System prompt', title: 'System prompt' },
+  { id: 'skills', label: 'Skills', title: 'Skills' }
+]
 
 type Draft = ProfileInput
 
@@ -20,6 +32,8 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
   const [editorFont, setEditorFont] = useState(settings.editorFont)
   const [handbook, setHandbook] = useState<HandbookRule[]>(() => settings.handbook.map((rule) => ({ ...rule })))
   const [shortcuts, setShortcuts] = useState<ShortcutBinding[]>(() => settings.shortcuts.map((item) => ({ ...item })))
+  const [skills, setSkills] = useState<Skill[]>(() => (settings.skills ?? []).map((skill) => ({ ...skill })))
+  const [page, setPage] = useState<Page>('vault')
   const [recording, setRecording] = useState<ShortcutBinding['action'] | null>(null)
   const [now, setNow] = useState(() => new Date())
 
@@ -75,7 +89,7 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
   async function save(): Promise<void> {
     try {
       await window.routine.saveProfiles(profiles, activeId, prompt)
-      const next = await window.routine.saveEditor(handbook, shortcuts, editorFont)
+      const next = await window.routine.saveEditor(handbook, shortcuts, editorFont, skills)
       onSaved(next)
       onToast('Settings saved')
       onClose()
@@ -84,32 +98,50 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
     }
   }
 
+  const current = PAGES.find((item) => item.id === page) ?? PAGES[0]
+
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="settings-modal" onMouseDown={(event) => event.stopPropagation()}>
-        <h2>Settings</h2>
-        <label className="field">
-          <span>Vault</span>
-          <div className="field-row">
-            <code>{settings.vaultRoot ?? 'None selected'}</code>
-            <button onClick={() => void chooseRoot()}>Change</button>
-          </div>
-        </label>
-        <label className="field">
-          <span>Note font</span>
-          <select value={editorFont} onChange={(event) => setEditorFont(event.target.value)}>
-            {EDITOR_FONTS.map((font) => (
-              <option key={font} value={font} style={{ fontFamily: editorFontStack(font) }}>
-                {font}
-              </option>
-            ))}
-          </select>
-          <p className="field-hint" style={{ fontFamily: editorFontStack(editorFont) }}>
-            The quick brown fox jumps over the lazy dog.
-          </p>
-        </label>
+        <nav className="settings-nav">
+          {PAGES.map((item) => (
+            <button
+              key={item.id}
+              className={item.id === page ? 'on' : ''}
+              onClick={() => setPage(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+          <button className="settings-nav-updates" onClick={onCheckUpdates}>Check for updates</button>
+        </nav>
+        <div className="settings-main">
+          <div className="settings-page">
+            <h2>{current.title}</h2>
+            {page === 'vault' ? (
+              <label className="field">
+                <div className="field-row">
+                  <code>{settings.vaultRoot ?? 'None selected'}</code>
+                  <button onClick={() => void chooseRoot()}>Change</button>
+                </div>
+              </label>
+            ) : null}
+            {page === 'font' ? (
+              <label className="field">
+                <select value={editorFont} onChange={(event) => setEditorFont(event.target.value)}>
+                  {EDITOR_FONTS.map((font) => (
+                    <option key={font} value={font} style={{ fontFamily: editorFontStack(font) }}>
+                      {font}
+                    </option>
+                  ))}
+                </select>
+                <p className="field-hint" style={{ fontFamily: editorFontStack(editorFont) }}>
+                  The quick brown fox jumps over the lazy dog.
+                </p>
+              </label>
+            ) : null}
+            {page === 'api' ? (
         <div className="field">
-          <span>API profiles</span>
           {profiles.map((profile) => (
             <div className={profile.id === activeId ? 'profile active' : 'profile'} key={profile.id}>
               <label className="check">
@@ -157,8 +189,9 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
             Add profile
           </button>
         </div>
+            ) : null}
+            {page === 'snippets' ? (
         <div className="field">
-          <span>Snippet book</span>
           <p className="field-hint">A trigger is replaced as soon as you finish typing it. Time and date use the current clock. Formats accept YYYY, MM, DD, HH, mm, and ss. A custom row replaces the trigger with the text you write.</p>
           {handbook.map((rule) => (
             <div className="rule-card" key={rule.id}>
@@ -207,8 +240,9 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
             Add snippet
           </button>
         </div>
+            ) : null}
+            {page === 'shortcuts' ? (
         <div className="field">
-          <span>Shortcuts</span>
           <p className="field-hint">These work in the note. Click a key, then press the new combination. Esc cancels.</p>
           {shortcuts.map((item) => (
             <div className="shortcut-row" key={item.action}>
@@ -222,16 +256,50 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
             </div>
           ))}
         </div>
-        <label className="field">
-          <span>System prompt</span>
-          <textarea value={prompt} rows={5} onChange={(event) => setPrompt(event.target.value)} />
-        </label>
-        <div className="modal-actions">
-          <button onClick={onCheckUpdates}>Check for updates</button>
-          <button onClick={onClose}>Cancel</button>
-          <button className="primary" onClick={() => void save()}>
-            Save
-          </button>
+            ) : null}
+            {page === 'prompt' ? (
+              <label className="field">
+                <textarea value={prompt} rows={8} onChange={(event) => setPrompt(event.target.value)} />
+              </label>
+            ) : null}
+            {page === 'skills' ? (
+              <div className="field">
+                <p className="field-hint">Type \name in the assistant. The chat still shows your words. The instructions go with that message only.</p>
+                {skills.map((skill) => (
+                  <div className="rule-card" key={skill.id}>
+                    <div className="rule-head">
+                      <label className="rule-field">
+                        <span>Name</span>
+                        <input
+                          value={skill.name}
+                          placeholder="review"
+                          onChange={(event) => patchSkill(skill.id, { name: event.target.value })}
+                        />
+                      </label>
+                      <button onClick={() => setSkills((items) => items.filter((item) => item.id !== skill.id))}>Delete</button>
+                    </div>
+                    <textarea
+                      value={skill.instructions}
+                      rows={4}
+                      placeholder="Tell the assistant how to handle this request."
+                      onChange={(event) => patchSkill(skill.id, { instructions: event.target.value })}
+                    />
+                  </div>
+                ))}
+                <button
+                  onClick={() =>
+                    setSkills((items) => [...items, { id: crypto.randomUUID(), name: '', instructions: '' }])
+                  }
+                >
+                  Add skill
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <div className="modal-actions">
+            <button onClick={onClose}>Cancel</button>
+            <button className="primary" onClick={() => void save()}>Save</button>
+          </div>
         </div>
       </div>
     </div>
@@ -248,6 +316,10 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
 
   function patchRule(id: string, patch: Partial<HandbookRule>): void {
     setHandbook((current) => current.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)))
+  }
+
+  function patchSkill(id: string, patch: Partial<Skill>): void {
+    setSkills((items) => items.map((skill) => (skill.id === id ? { ...skill, ...patch } : skill)))
   }
 }
 

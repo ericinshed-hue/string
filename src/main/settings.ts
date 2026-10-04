@@ -3,8 +3,10 @@ import { existsSync, promises as fs } from 'fs'
 import path from 'path'
 import { DEFAULT_EDITOR_FONT, coerceEditorFont } from '../shared/fonts'
 import { coerceHandbook, coerceShortcuts, defaultHandbook, defaultShortcuts, prepareHandbook, prepareShortcuts } from '../shared/handbook'
-import type { HandbookRule, ProfileInput, PublicProfile, PublicSettings, ShortcutBinding, Zone } from '../shared/types'
+import { coerceSkills, prepareSkills } from '../shared/skills'
+import type { HandbookRule, ProfileInput, PublicProfile, PublicSettings, ShortcutBinding, Skill, Zone } from '../shared/types'
 import { DEFAULT_SYSTEM_PROMPT } from '../shared/types'
+import { verifyLicense } from './license'
 
 type StoredProfile = {
   id: string
@@ -22,6 +24,8 @@ type SettingsFile = {
   handbook: HandbookRule[]
   shortcuts: ShortcutBinding[]
   editorFont: string
+  skills: Skill[]
+  licenseCode: string | null
   lastOpen: Record<Zone, string | null>
   lastZone: Zone
 }
@@ -39,6 +43,8 @@ function emptySettings(): SettingsFile {
     handbook: defaultHandbook(),
     shortcuts: defaultShortcuts(),
     editorFont: DEFAULT_EDITOR_FONT,
+    skills: [],
+    licenseCode: null,
     lastOpen: { note: null, routine: null },
     lastZone: 'routine'
   }
@@ -54,7 +60,9 @@ export async function loadSettings(): Promise<SettingsFile> {
       lastOpen: { ...emptySettings().lastOpen, ...parsed.lastOpen },
       handbook: coerceHandbook(parsed.handbook),
       shortcuts: coerceShortcuts(parsed.shortcuts),
-      editorFont: coerceEditorFont(parsed.editorFont)
+      editorFont: coerceEditorFont(parsed.editorFont),
+      skills: coerceSkills(parsed.skills),
+      licenseCode: typeof parsed.licenseCode === 'string' ? parsed.licenseCode : null
     }
   } catch {
     return emptySettings()
@@ -116,6 +124,8 @@ export async function publicSettings(): Promise<PublicSettings> {
     handbook: settings.handbook,
     shortcuts: settings.shortcuts,
     editorFont: settings.editorFont,
+    skills: settings.skills,
+    activated: !app.isPackaged || verifyLicense(settings.licenseCode) !== null,
     lastOpen: settings.lastOpen,
     lastZone: settings.lastZone
   }
@@ -174,12 +184,21 @@ export async function saveProfileSettings(
 export async function saveEditorSettings(
   handbook: HandbookRule[],
   shortcuts: ShortcutBinding[],
-  editorFont: string
+  editorFont: string,
+  skills: Skill[]
 ): Promise<void> {
   const settings = await loadSettings()
   settings.handbook = prepareHandbook(handbook)
   settings.shortcuts = prepareShortcuts(shortcuts)
   settings.editorFont = coerceEditorFont(editorFont)
+  settings.skills = prepareSkills(skills)
+  await saveSettings(settings)
+}
+
+export async function saveLicenseCode(code: string): Promise<void> {
+  if (!verifyLicense(code)) throw new Error('That activation code is invalid')
+  const settings = await loadSettings()
+  settings.licenseCode = code.trim()
   await saveSettings(settings)
 }
 

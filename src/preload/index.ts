@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ChatDesk, ChatEvent, HandbookRule, ProfileInput, PublicSettings, SearchHit, ShortcutBinding, TrashItem, TreeNode, UiMessage, Zone } from '../shared/types'
+import type { ChatDesk, ChatEvent, HandbookRule, ProfileInput, PublicSettings, SearchHit, ShortcutBinding, Skill, TrashItem, TreeNode, UiMessage, Zone } from '../shared/types'
 
 const api = {
   getSettings: (): Promise<PublicSettings> => ipcRenderer.invoke('settings:get'),
@@ -7,8 +7,9 @@ const api = {
   useSuggested: (): Promise<PublicSettings> => ipcRenderer.invoke('settings:use-suggested'),
   saveProfiles: (profiles: ProfileInput[], activeProfileId: string | null, systemPrompt: string): Promise<PublicSettings> =>
     ipcRenderer.invoke('settings:save-profiles', profiles, activeProfileId, systemPrompt),
-  saveEditor: (handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string): Promise<PublicSettings> =>
-    ipcRenderer.invoke('settings:save-editor', handbook, shortcuts, editorFont),
+  saveEditor: (handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string, skills: Skill[]): Promise<PublicSettings> =>
+    ipcRenderer.invoke('settings:save-editor', handbook, shortcuts, editorFont, skills),
+  activate: (code: string): Promise<PublicSettings> => ipcRenderer.invoke('settings:activate', code),
   tree: (zone: Zone): Promise<TreeNode[]> => ipcRenderer.invoke('vault:tree', zone),
   read: (zone: Zone, rel: string): Promise<string> => ipcRenderer.invoke('vault:read', zone, rel),
   write: (zone: Zone, rel: string, content: string): Promise<void> => ipcRenderer.invoke('vault:write', zone, rel, content),

@@ -424,7 +424,7 @@ body.tree-resizing .tree-resizer { background: color-mix(in srgb, var(--accent) 
   padding-top: 12vh;
   animation: fade 0.2s ease;
 }
-.search-modal, .settings-modal, .welcome-card, .password-modal {
+.search-modal, .welcome-card, .password-modal {
   width: min(640px, calc(100% - 48px));
   background: var(--bg-elev);
   border: 1px solid var(--line);
@@ -443,7 +443,39 @@ body.tree-resizing .tree-resizer { background: color-mix(in srgb, var(--accent) 
 .search-hit { flex-direction: column; align-items: flex-start; }
 .search-hit small { color: var(--muted); }
 
-.settings-modal { padding: 22px; max-height: 76vh; overflow: auto; }
+.settings-modal {
+  width: min(760px, calc(100% - 48px));
+  max-height: 76vh;
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+.settings-nav {
+  width: 168px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 10px;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-soft));
+}
+.settings-nav button {
+  text-align: left;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--muted);
+}
+.settings-nav button.on { color: var(--text); background: var(--bg-soft); }
+.settings-nav-updates { margin-top: auto; }
+.settings-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.settings-page { flex: 1; overflow: auto; padding: 22px 22px 8px; }
+.settings-page h2 { margin: 0 0 18px; font-size: 28px; font-weight: 600; }
+.settings-main .modal-actions { padding: 12px 22px 18px; }
 .settings-modal h2 { margin: 0 0 14px; font-weight: 600; }
 .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; color: var(--muted); font-size: 13px; }
 .field-hint, .rule-preview { margin: 0; font-size: 12px; line-height: 1.5; }
@@ -501,6 +533,17 @@ body.tree-resizing .tree-resizer { background: color-mix(in srgb, var(--accent) 
 .welcome-card h1 { margin: 8px 0 10px; font-weight: 600; font-size: 36px; }
 .welcome-copy { color: var(--muted); line-height: 1.7; margin-top: 0; }
 .welcome-actions { display: flex; gap: 10px; }
+.setup-card { width: min(560px, calc(100% - 48px)); }
+.setup-steps { color: var(--muted); letter-spacing: 0.04em; margin-top: 0; }
+.setup-card .field { margin-bottom: 10px; }
+.setup-card input, .setup-card textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--editor);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+}
 
 .toast {
   position: fixed;

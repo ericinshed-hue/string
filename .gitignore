@@ -3,5 +3,6 @@ out
 dist
 release
 Routine_Note
+secrets
 *.log
 src/renderer/public/vditor
