@@ -1,6 +1,6 @@
 {
   "name": "routine-notes",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "String, a local notebook with a day log and a night diary",
   "main": "./out/main/index.js",
