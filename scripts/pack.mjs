@@ -37,7 +37,8 @@ if (publish) {
     'always',
     '--config.publish.provider=github',
     `--config.publish.owner=${owner}`,
-    '--config.publish.repo=string'
+    '--config.publish.repo=string',
+    '--config.publish.releaseType=release'
   )
 }
 
