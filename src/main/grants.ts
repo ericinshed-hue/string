@@ -3,10 +3,10 @@ import { normalizePosix } from '../shared/paths'
 
 const grants = new Map<string, string>()
 
-function key(zone: Zone, rel: string): string | null {
+function key(_zone: Zone, rel: string): string | null {
   const normalized = normalizePosix(rel)
   if (!normalized) return null
-  return `${zone}:${normalized}`
+  return normalized
 }
 
 export function grantSecret(zone: Zone, rel: string, password: string): void {

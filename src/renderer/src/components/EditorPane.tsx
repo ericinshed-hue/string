@@ -94,7 +94,7 @@ export function EditorPane(props: Props) {
           sanitize: false,
           autoSpace: true
         },
-        transform: (html) => rewriteImages(html, propsRef.current.zone, propsRef.current.filePath)
+        transform: (html) => rewriteImages(html, propsRef.current.filePath)
       },
       upload: {
         accept: 'image/*',
@@ -149,7 +149,7 @@ export function EditorPane(props: Props) {
       host.querySelectorAll('img').forEach((img) => {
         const raw = img.getAttribute('data-raw-src') || img.getAttribute('src') || ''
         if (!raw || /^(?:vault:|data:|blob:|https?:)/.test(raw)) return
-        const vaultPath = imageVaultPath(props.zone, props.filePath, raw)
+        const vaultPath = imageVaultPath(props.filePath, raw)
         if (!vaultPath) return
         const next = vaultUrlFromPosix(vaultPath)
         if (img.getAttribute('src') !== next) {
@@ -239,9 +239,9 @@ function runShortcut(live: VditorLive, action: ShortcutAction): void {
   elements.headings?.querySelector(`button[data-tag="h${level}"]`)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 }
 
-function rewriteImages(html: string, zone: Zone, filePath: string): string {
+function rewriteImages(html: string, filePath: string): string {
   return html.replace(/(<img\b[^>]*?\ssrc=")([^"]+)(")/g, (full, prefix, src, suffix) => {
-    const vaultPath = imageVaultPath(zone, filePath, src)
+    const vaultPath = imageVaultPath(filePath, src)
     if (!vaultPath) return full
     return `${prefix}${vaultUrlFromPosix(vaultPath)}${suffix}`
   })

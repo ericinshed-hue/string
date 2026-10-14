@@ -19,14 +19,16 @@ export function normalizePosix(input: string): string | null {
   return parts.join('/')
 }
 
-export function imageVaultPath(zone: Zone, noteRel: string, src: string): string | null {
+export function imageVaultPath(noteRel: string, src: string): string | null {
   const trimmed = src.trim()
   if (!trimmed || /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(trimmed)) return null
-  const noteDir = noteRel.split('/').slice(0, -1).join('/')
-  const combined = `${zoneFolder(zone)}/${noteDir ? `${noteDir}/` : ''}${trimmed}`
+  const slash = noteRel.indexOf('/')
+  if (slash <= 0) return null
+  const id = noteRel.slice(0, slash)
+  const noteDir = noteRel.slice(slash + 1).split('/').slice(0, -1).join('/')
+  const combined = `${id}/${noteDir ? `${noteDir}/` : ''}${trimmed}`
   const normalized = normalizePosix(combined)
-  const folder = zoneFolder(zone)
-  if (!normalized || normalized === folder || !normalized.startsWith(`${folder}/`)) return null
+  if (!normalized || !normalized.startsWith(`${id}/`)) return null
   return normalized
 }
 

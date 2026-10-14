@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { coerceEditorFont, editorFontStack } from '@shared/fonts'
+import { coerceEditorFont, coerceUiFontSize, editorFontStack } from '@shared/fonts'
 import { coerceHandbook, coerceShortcuts } from '@shared/handbook'
 import { coerceSkills } from '@shared/skills'
 import type { PublicSettings, TrashItem, TreeNode, Zone } from '@shared/types'
@@ -18,13 +18,16 @@ import { Welcome } from './components/Welcome'
 const DAY = '#f7f6f3'
 const NIGHT = '#161618'
 const TREE_WIDTH_KEY = 'routine.treeWidth'
-const TREE_MIN = 200
-const TREE_MAX = 720
+const TREE_MIN = 230
+const TREE_MAX = 520
+const DRAWER_WIDTH_KEY = 'routine.drawerWidth'
+const DRAWER_MIN = 320
+const DRAWER_MAX = 640
 
-function readTreeWidth(): number {
-  const saved = Number(localStorage.getItem(TREE_WIDTH_KEY))
-  if (!Number.isFinite(saved)) return 252
-  return Math.min(TREE_MAX, Math.max(TREE_MIN, saved))
+function readPaneWidth(key: string, fallback: number, min: number, max: number): number {
+  const saved = Number(localStorage.getItem(key))
+  if (!Number.isFinite(saved)) return fallback
+  return Math.min(max, Math.max(min, saved))
 }
 
 export function App() {
@@ -32,10 +35,13 @@ export function App() {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [zone, setZone] = useState<Zone>('routine')
   const [treeOpen, setTreeOpen] = useState(true)
-  const [treeWidth, setTreeWidth] = useState(readTreeWidth)
+  const [treeWidth, setTreeWidth] = useState(() => readPaneWidth(TREE_WIDTH_KEY, 252, TREE_MIN, TREE_MAX))
   const treeWidthRef = useRef(treeWidth)
   treeWidthRef.current = treeWidth
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerWidth, setDrawerWidth] = useState(() => readPaneWidth(DRAWER_WIDTH_KEY, 380, DRAWER_MIN, DRAWER_MAX))
+  const drawerWidthRef = useRef(drawerWidth)
+  drawerWidthRef.current = drawerWidth
   const [searchOpen, setSearchOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
@@ -53,8 +59,10 @@ export function App() {
   const [update, setUpdate] = useState<{ phase: 'available' | 'downloading' | 'ready'; version: string; notes: string; percent: number } | null>(null)
 
   useEffect(() => {
+    document.documentElement.style.fontSize = `${coerceUiFontSize(settings?.uiFontSize)}px`
+    document.documentElement.style.setProperty('--ui-font', editorFontStack(settings?.uiFont))
     document.documentElement.style.setProperty('--editor-font', editorFontStack(settings?.editorFont))
-  }, [settings?.editorFont])
+  }, [settings?.editorFont, settings?.uiFont, settings?.uiFontSize])
 
   const zoneRef = useRef(zone)
   const pathRef = useRef<string | null>(null)
@@ -543,7 +551,7 @@ export function App() {
             <span>{chars} chars</span>
           </footer>
         </main>
-        <div className="drawer-slot">
+        <div className="drawer-slot" style={{ width: drawerOpen ? drawerWidth : 0 }}>
           <AiDrawer
             zone={zone}
             profiles={settings.profiles}
@@ -552,6 +560,36 @@ export function App() {
             onToast={showToast}
             onProfile={(id) => void activateProfile(id)}
           />
+          {drawerOpen ? (
+            <div
+              className="drawer-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize assistant"
+              onPointerDown={(event) => {
+                event.preventDefault()
+                const handle = event.currentTarget
+                handle.setPointerCapture(event.pointerId)
+                const startX = event.clientX
+                const startW = drawerWidthRef.current
+                document.body.classList.add('drawer-resizing')
+                const move = (ev: PointerEvent): void => {
+                  const next = Math.min(DRAWER_MAX, Math.max(DRAWER_MIN, startW + startX - ev.clientX))
+                  drawerWidthRef.current = next
+                  setDrawerWidth(next)
+                }
+                const up = (ev: PointerEvent): void => {
+                  handle.removeEventListener('pointermove', move)
+                  handle.removeEventListener('pointerup', up)
+                  document.body.classList.remove('drawer-resizing')
+                  localStorage.setItem(DRAWER_WIDTH_KEY, String(drawerWidthRef.current))
+                  if (handle.hasPointerCapture(ev.pointerId)) handle.releasePointerCapture(ev.pointerId)
+                }
+                handle.addEventListener('pointermove', move)
+                handle.addEventListener('pointerup', up)
+              }}
+            />
+          ) : null}
         </div>
       </div>
       {searchOpen ? (
@@ -567,8 +605,10 @@ export function App() {
           onClose={() => setSettingsOpen(false)}
           onToast={showToast}
           onSaved={(next) => {
+            const prev = (settings.libraries ?? []).join('\n')
+            const nextList = (next.libraries ?? []).join('\n')
             setSettings(withEditor(next))
-            if (next.vaultRoot && next.vaultRoot !== settings.vaultRoot) void adoptVault(next)
+            if (prev !== nextList) void adoptVault(next)
           }}
           onCheckUpdates={() => void checkForUpdates()}
         />
@@ -757,6 +797,8 @@ function withEditor(settings: PublicSettings): PublicSettings {
     handbook: coerceHandbook(settings.handbook),
     shortcuts: coerceShortcuts(settings.shortcuts),
     editorFont: coerceEditorFont(settings.editorFont),
+    uiFont: coerceEditorFont(settings.uiFont),
+    uiFontSize: coerceUiFontSize(settings.uiFontSize),
     skills: coerceSkills(settings.skills)
   }
 }

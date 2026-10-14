@@ -1,10 +1,11 @@
 import { app, safeStorage } from 'electron'
 import { existsSync, promises as fs } from 'fs'
 import path from 'path'
-import { DEFAULT_EDITOR_FONT, coerceEditorFont } from '../shared/fonts'
+import { DEFAULT_EDITOR_FONT, DEFAULT_UI_FONT_SIZE, coerceEditorFont, coerceUiFontSize } from '../shared/fonts'
 import { coerceHandbook, coerceShortcuts, defaultHandbook, defaultShortcuts, prepareHandbook, prepareShortcuts } from '../shared/handbook'
 import { coerceSkills, prepareSkills } from '../shared/skills'
 import type { HandbookRule, ProfileInput, PublicProfile, PublicSettings, ShortcutBinding, Skill, Zone } from '../shared/types'
+import { libraryId } from '../shared/library'
 import { DEFAULT_SYSTEM_PROMPT } from '../shared/types'
 import { verifyLicense } from './license'
 
@@ -18,12 +19,15 @@ type StoredProfile = {
 
 type SettingsFile = {
   vaultRoot: string | null
+  libraries: string[]
   activeProfileId: string | null
   profiles: StoredProfile[]
   systemPrompt: string
   handbook: HandbookRule[]
   shortcuts: ShortcutBinding[]
   editorFont: string
+  uiFont: string
+  uiFontSize: number
   skills: Skill[]
   licenseCode: string | null
   lastOpen: Record<Zone, string | null>
@@ -37,12 +41,15 @@ function filePath(): string {
 function emptySettings(): SettingsFile {
   return {
     vaultRoot: null,
+    libraries: [],
     activeProfileId: null,
     profiles: [],
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     handbook: defaultHandbook(),
     shortcuts: defaultShortcuts(),
     editorFont: DEFAULT_EDITOR_FONT,
+    uiFont: DEFAULT_EDITOR_FONT,
+    uiFontSize: DEFAULT_UI_FONT_SIZE,
     skills: [],
     licenseCode: null,
     lastOpen: { note: null, routine: null },
@@ -50,20 +57,65 @@ function emptySettings(): SettingsFile {
   }
 }
 
+function dedupePaths(folders: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const folder of folders) {
+    const resolved = path.resolve(folder)
+    const key = resolved.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(resolved)
+  }
+  return out
+}
+
+export function migrateVaultRoot(vaultRoot: string): string[] {
+  const note = path.join(vaultRoot, 'Note')
+  const routine = path.join(vaultRoot, 'Routine')
+  const found = [note, routine].filter((dir) => existsSync(dir))
+  return dedupePaths(found.length ? found : [vaultRoot])
+}
+
+function prefixOpen(root: string | undefined, rel: string | null | undefined): string | null {
+  if (!rel || !root) return rel ?? null
+  const id = libraryId(root)
+  return rel.startsWith(`${id}/`) ? rel : `${id}/${rel.replace(/^[/\\]+/, '')}`
+}
+
 export async function loadSettings(): Promise<SettingsFile> {
   try {
     const raw = await fs.readFile(filePath(), 'utf8')
     const parsed = JSON.parse(raw) as Partial<SettingsFile>
-    return {
+    const hadLibraries = Array.isArray(parsed.libraries)
+    const libraries = hadLibraries
+      ? dedupePaths(parsed.libraries!.filter((item): item is string => typeof item === 'string' && item.trim().length > 0))
+      : parsed.vaultRoot
+        ? migrateVaultRoot(parsed.vaultRoot)
+        : []
+    const lastOpen = { ...emptySettings().lastOpen, ...parsed.lastOpen }
+    if (!hadLibraries && libraries.length) {
+      const note = libraries.find((dir) => path.basename(dir).toLowerCase() === 'note')
+      const routine = libraries.find((dir) => path.basename(dir).toLowerCase() === 'routine')
+      lastOpen.note = prefixOpen(note ?? libraries[0], lastOpen.note)
+      lastOpen.routine = prefixOpen(routine ?? libraries[0], lastOpen.routine)
+    }
+    const settings: SettingsFile = {
       ...emptySettings(),
       ...parsed,
-      lastOpen: { ...emptySettings().lastOpen, ...parsed.lastOpen },
+      libraries,
+      vaultRoot: libraries[0] ?? null,
+      lastOpen,
       handbook: coerceHandbook(parsed.handbook),
       shortcuts: coerceShortcuts(parsed.shortcuts),
       editorFont: coerceEditorFont(parsed.editorFont),
+      uiFont: coerceEditorFont(parsed.uiFont),
+      uiFontSize: coerceUiFontSize(parsed.uiFontSize),
       skills: coerceSkills(parsed.skills),
       licenseCode: typeof parsed.licenseCode === 'string' ? parsed.licenseCode : null
     }
+    if (!hadLibraries && libraries.length) await saveSettings(settings)
+    return settings
   } catch {
     return emptySettings()
   }
@@ -116,7 +168,8 @@ export function suggestVault(): string | null {
 export async function publicSettings(): Promise<PublicSettings> {
   const settings = await loadSettings()
   return {
-    vaultRoot: settings.vaultRoot,
+    vaultRoot: settings.libraries[0] ?? null,
+    libraries: settings.libraries,
     suggestedVault: suggestVault(),
     activeProfileId: settings.activeProfileId,
     profiles: settings.profiles.map(toPublic),
@@ -124,8 +177,12 @@ export async function publicSettings(): Promise<PublicSettings> {
     handbook: settings.handbook,
     shortcuts: settings.shortcuts,
     editorFont: settings.editorFont,
+    uiFont: settings.uiFont,
+    uiFontSize: settings.uiFontSize,
     skills: settings.skills,
     activated: !app.isPackaged || verifyLicense(settings.licenseCode) !== null,
+    account: verifyLicense(settings.licenseCode),
+    version: app.getVersion(),
     lastOpen: settings.lastOpen,
     lastZone: settings.lastZone
   }
@@ -144,8 +201,32 @@ function toPublic(profile: StoredProfile): PublicProfile {
 
 export async function setVaultRoot(vaultRoot: string): Promise<void> {
   const settings = await loadSettings()
-  settings.vaultRoot = vaultRoot
+  settings.libraries = migrateVaultRoot(vaultRoot)
+  settings.vaultRoot = settings.libraries[0] ?? null
   await saveSettings(settings)
+}
+
+export async function addLibrary(folder: string): Promise<void> {
+  const settings = await loadSettings()
+  const next = path.resolve(folder)
+  if (!settings.libraries.some((item) => item.toLowerCase() === next.toLowerCase())) {
+    settings.libraries = [...settings.libraries, next]
+  }
+  settings.vaultRoot = settings.libraries[0] ?? null
+  await saveSettings(settings)
+}
+
+export async function removeLibrary(folder: string): Promise<void> {
+  const settings = await loadSettings()
+  const target = path.resolve(folder).toLowerCase()
+  settings.libraries = settings.libraries.filter((item) => path.resolve(item).toLowerCase() !== target)
+  settings.vaultRoot = settings.libraries[0] ?? null
+  await saveSettings(settings)
+}
+
+export async function currentLibraries(): Promise<string[]> {
+  const settings = await loadSettings()
+  return settings.libraries
 }
 
 export async function setLastOpen(zone: Zone, rel: string | null): Promise<void> {
@@ -185,12 +266,16 @@ export async function saveEditorSettings(
   handbook: HandbookRule[],
   shortcuts: ShortcutBinding[],
   editorFont: string,
+  uiFont: string,
+  uiFontSize: number,
   skills: Skill[]
 ): Promise<void> {
   const settings = await loadSettings()
   settings.handbook = prepareHandbook(handbook)
   settings.shortcuts = prepareShortcuts(shortcuts)
   settings.editorFont = coerceEditorFont(editorFont)
+  settings.uiFont = coerceEditorFont(uiFont)
+  settings.uiFontSize = coerceUiFontSize(uiFontSize)
   settings.skills = prepareSkills(skills)
   await saveSettings(settings)
 }
@@ -215,6 +300,6 @@ export async function activeProfile(): Promise<{ baseURL: string; model: string;
 }
 
 export async function currentVault(): Promise<string | null> {
-  const settings = await loadSettings()
-  return settings.vaultRoot
+  const libraries = await currentLibraries()
+  return libraries[0] ?? null
 }

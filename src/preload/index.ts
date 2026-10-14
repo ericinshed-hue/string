@@ -1,14 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ChatDesk, ChatEvent, HandbookRule, ProfileInput, PublicSettings, SearchHit, ShortcutBinding, Skill, TrashItem, TreeNode, UiMessage, Zone } from '../shared/types'
+import type { ChatDesk, ChatEvent, HandbookRule, ProfileInput, PublicSettings, SearchHit, ShortcutBinding, Skill, TrashItem, TreeNode, UiMessage, UsageStats, Zone } from '../shared/types'
 
 const api = {
   getSettings: (): Promise<PublicSettings> => ipcRenderer.invoke('settings:get'),
   pickRoot: (): Promise<PublicSettings | null> => ipcRenderer.invoke('settings:pick-root'),
+  addLibrary: (): Promise<PublicSettings | null> => ipcRenderer.invoke('settings:add-library'),
+  removeLibrary: (folder: string): Promise<PublicSettings> => ipcRenderer.invoke('settings:remove-library', folder),
   useSuggested: (): Promise<PublicSettings> => ipcRenderer.invoke('settings:use-suggested'),
   saveProfiles: (profiles: ProfileInput[], activeProfileId: string | null, systemPrompt: string): Promise<PublicSettings> =>
     ipcRenderer.invoke('settings:save-profiles', profiles, activeProfileId, systemPrompt),
-  saveEditor: (handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string, skills: Skill[]): Promise<PublicSettings> =>
-    ipcRenderer.invoke('settings:save-editor', handbook, shortcuts, editorFont, skills),
+  saveEditor: (handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string, uiFont: string, uiFontSize: number, skills: Skill[]): Promise<PublicSettings> =>
+    ipcRenderer.invoke('settings:save-editor', handbook, shortcuts, editorFont, uiFont, uiFontSize, skills),
+  usage: (): Promise<UsageStats> => ipcRenderer.invoke('settings:usage'),
   activate: (code: string): Promise<PublicSettings> => ipcRenderer.invoke('settings:activate', code),
   tree: (zone: Zone): Promise<TreeNode[]> => ipcRenderer.invoke('vault:tree', zone),
   read: (zone: Zone, rel: string): Promise<string> => ipcRenderer.invoke('vault:read', zone, rel),

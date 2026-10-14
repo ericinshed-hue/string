@@ -35,7 +35,7 @@ export function Welcome({ settings, onReady, onToast }: Props) {
         <p className="eyebrow">String</p>
         <h1>A day log, and a night diary</h1>
         <p className="welcome-copy">
-          Choose a vault that contains Note and Routine. Day is for what you did; night is for the diary. Slide the switch in the title bar to move between them.
+          Choose a folder of notes. Day and Night share the same files; the title-bar switch only changes the theme and which side the assistant is on.
         </p>
         <div className="welcome-actions">
           <button className="primary" onClick={() => void pick()}>

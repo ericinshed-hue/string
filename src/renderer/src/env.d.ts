@@ -1,4 +1,4 @@
-import type { ChatDesk, ChatEvent, HandbookRule, ProfileInput, PublicSettings, SearchHit, ShortcutBinding, Skill, TrashItem, TreeNode, UiMessage, Zone } from '@shared/types'
+import type { ChatDesk, ChatEvent, HandbookRule, ProfileInput, PublicSettings, SearchHit, ShortcutBinding, Skill, TrashItem, TreeNode, UiMessage, UsageStats, Zone } from '@shared/types'
 
 export {}
 
@@ -7,9 +7,12 @@ declare global {
     routine: {
       getSettings(): Promise<PublicSettings>
       pickRoot(): Promise<PublicSettings | null>
+      addLibrary(): Promise<PublicSettings | null>
+      removeLibrary(folder: string): Promise<PublicSettings>
       useSuggested(): Promise<PublicSettings>
       saveProfiles(profiles: ProfileInput[], activeProfileId: string | null, systemPrompt: string): Promise<PublicSettings>
-      saveEditor(handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string, skills: Skill[]): Promise<PublicSettings>
+      saveEditor(handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string, uiFont: string, uiFontSize: number, skills: Skill[]): Promise<PublicSettings>
+      usage(): Promise<UsageStats>
       activate(code: string): Promise<PublicSettings>
       tree(zone: Zone): Promise<TreeNode[]>
       read(zone: Zone, rel: string): Promise<string>

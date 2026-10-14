@@ -65,8 +65,22 @@ export type Skill = {
   instructions: string
 }
 
+export type UsageStats = {
+  requests: number
+  promptTokens: number
+  completionTokens: number
+  updatedAt: string | null
+}
+
+export type AccountInfo = {
+  name: string
+  email: string
+  exp: string | null
+} | null
+
 export type PublicSettings = {
   vaultRoot: string | null
+  libraries: string[]
   suggestedVault: string | null
   activeProfileId: string | null
   profiles: PublicProfile[]
@@ -74,8 +88,12 @@ export type PublicSettings = {
   handbook: HandbookRule[]
   shortcuts: ShortcutBinding[]
   editorFont: string
+  uiFont: string
+  uiFontSize: number
   skills: Skill[]
   activated: boolean
+  account: AccountInfo
+  version: string
   lastOpen: Record<Zone, string | null>
   lastZone: Zone
 }

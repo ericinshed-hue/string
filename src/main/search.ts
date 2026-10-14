@@ -7,25 +7,24 @@ type IndexedFile = {
   lines: string[]
 }
 
-const indexes = new Map<Zone, IndexedFile[]>()
+let indexed: IndexedFile[] | null = null
 
-export function invalidateSearch(zone?: Zone): void {
-  if (zone) indexes.delete(zone)
-  else indexes.clear()
+export function invalidateSearch(_zone?: Zone): void {
+  indexed = null
 }
 
-export async function searchNotes(vaultRoot: string, zone: Zone, query: string): Promise<SearchHit[]> {
+export async function searchNotes(libraries: string[], query: string): Promise<SearchHit[]> {
   const q = query.trim().toLowerCase()
   if (!q) return []
-  let files = indexes.get(zone)
+  let files = indexed
   if (!files) {
-    const notes = await walkNotes(vaultRoot, zone)
+    const notes = await walkNotes(libraries)
     files = notes.map((note) => ({
       path: note.path,
       name: note.name,
       lines: note.content.split(/\r?\n/)
     }))
-    indexes.set(zone, files)
+    indexed = files
   }
   const hits: SearchHit[] = []
   for (const file of files) {

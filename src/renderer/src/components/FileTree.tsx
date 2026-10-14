@@ -158,10 +158,6 @@ export function FileTree(props: Props) {
               setExpanded((current) => new Set(current).add(parentPath))
             }}
             onDraftCancel={() => setDraft(null)}
-            onCreateInside={(path) => {
-              setDraft({ parent: path, kind: 'folder' })
-              setExpanded((current) => new Set(current).add(path))
-            }}
             menuPath={menu?.kind === 'entry' ? menu.path : null}
             onContextMenu={openEntryMenu}
           />
@@ -183,6 +179,10 @@ export function FileTree(props: Props) {
           onCopyEntry={props.onCopyEntry}
           onNewFile={() => setDraft({ parent: '', kind: 'file' })}
           onNewFolder={() => setDraft({ parent: '', kind: 'folder' })}
+          onCreateInside={(path, kind) => {
+            setDraft({ parent: path, kind })
+            setExpanded((current) => new Set(current).add(path))
+          }}
           onPaste={props.onPaste}
           onOpenRoot={props.onOpenRoot}
           onEncrypt={props.onEncrypt}
@@ -237,7 +237,6 @@ type RowProps = {
   onMove: (from: string, to: string) => void
   onDraftSubmit: (parent: string, kind: 'file' | 'folder', name: string) => void
   onDraftCancel: () => void
-  onCreateInside: (path: string) => void
   menuPath: string | null
   onContextMenu: (event: ReactMouseEvent, node: TreeNode) => void
 }
@@ -283,16 +282,6 @@ function NodeRow(props: RowProps) {
           </span>
           <span className="tree-name" title={label}>{label}</span>
           <span className="tree-actions">
-            {props.node.type === 'folder' ? (
-              <button
-                onClick={(event) => {
-                  event.stopPropagation()
-                  props.onCreateInside(props.node.path)
-                }}
-              >
-                Subfolder
-              </button>
-            ) : null}
             <button
               onClick={(event) => {
                 event.stopPropagation()
@@ -402,6 +391,7 @@ function TreeMenu({
   onCopyEntry,
   onNewFile,
   onNewFolder,
+  onCreateInside,
   onPaste,
   onOpenRoot,
   onEncrypt,
@@ -417,6 +407,7 @@ function TreeMenu({
   onCopyEntry: (path: string) => void
   onNewFile: () => void
   onNewFolder: () => void
+  onCreateInside: (path: string, kind: 'file' | 'folder') => void
   onPaste: () => void
   onOpenRoot: () => void
   onEncrypt: (path: string) => void
@@ -444,12 +435,15 @@ function TreeMenu({
         { label: 'Open file location', run: () => run(() => onReveal(menu.path)) },
         { label: 'Rename', run: () => run(() => onRenameStart(menu.path)) },
         { label: 'Delete', danger: true, run: () => run(() => onDelete(menu.path)) },
-        ...(menu.entry === 'file'
-          ? [{
+        ...(menu.entry === 'folder'
+          ? [
+              { label: 'New file', run: () => run(() => onCreateInside(menu.path, 'file')) },
+              { label: 'New folder', run: () => run(() => onCreateInside(menu.path, 'folder')) }
+            ]
+          : [{
               label: menu.encrypted ? 'Decrypt' : 'Encrypt',
               run: () => run(() => (menu.encrypted ? onDecrypt(menu.path) : onEncrypt(menu.path)))
-            }]
-          : []),
+            }]),
         { divider: true, label: '', run: () => undefined },
         { label: 'Copy absolute path', run: () => run(() => onCopyPath(menu.path, 'absolute')) },
         { label: 'Copy relative path', run: () => run(() => onCopyPath(menu.path, 'relative')) },

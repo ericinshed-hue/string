@@ -84,7 +84,7 @@ export function SetupWizard({ settings, onReady, onToast }: Props) {
         <p className="setup-steps">{STEPS.map((label, index) => (index === step ? label : '·')).join('  ')}</p>
         {step === 0 ? (
           <>
-            <p className="welcome-copy">Choose the folder that will hold your Note and Routine notebooks.</p>
+            <p className="welcome-copy">Choose a folder of notes. If it already contains Note and Routine, both are added.</p>
             <p className="field-hint">{vault || 'No folder selected'}</p>
             <div className="welcome-actions">
               <button onClick={() => void chooseFolder()}>Choose folder</button>

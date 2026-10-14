@@ -7,12 +7,15 @@ import { runAgent, runs } from './agent'
 import { createSession, loadDesk, openSession, readSession, removeSession, writeSession } from './history'
 import { canPasteFiles, copyFiles, copyText, filesToPaste } from './fileclip'
 import { grantSecret, revokeSecret } from './grants'
+import { loadUsage } from './usage'
 import { invalidateSearch, searchNotes } from './search'
 import {
   activeProfile,
-  currentVault,
+  addLibrary,
+  currentLibraries,
   loadSettings,
   publicSettings,
+  removeLibrary,
   saveEditorSettings,
   saveLicenseCode,
   saveProfileSettings,
@@ -26,6 +29,7 @@ import {
   deleteToTrash,
   emptyTrash,
   ensureZoneDirs,
+  innerRelative,
   listTrash,
   listTree,
   moveNote,
@@ -46,11 +50,11 @@ function isZone(value: unknown): value is Zone {
   return value === 'note' || value === 'routine'
 }
 
-async function requireVault(): Promise<string> {
-  const root = await currentVault()
-  if (!root) throw new Error('No vault selected')
-  await ensureZoneDirs(root)
-  return root
+async function requireLibraries(): Promise<string[]> {
+  const libraries = await currentLibraries()
+  if (!libraries.length) throw new Error('No library selected')
+  await ensureZoneDirs(libraries)
+  return libraries
 }
 
 export function registerIpc(win: BrowserWindow): void {
@@ -63,7 +67,26 @@ export function registerIpc(win: BrowserWindow): void {
     const stat = await fs.stat(root)
     if (!stat.isDirectory()) throw new Error('Choose a folder')
     await setVaultRoot(root)
-    await ensureZoneDirs(root)
+    await ensureZoneDirs(await currentLibraries())
+    invalidateSearch()
+    return publicSettings()
+  })
+
+  ipcMain.handle('settings:add-library', async () => {
+    const result = await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+    if (result.canceled || !result.filePaths[0]) return null
+    const folder = result.filePaths[0]
+    const stat = await fs.stat(folder)
+    if (!stat.isDirectory()) throw new Error('Choose a folder')
+    await addLibrary(folder)
+    await ensureZoneDirs(await currentLibraries())
+    invalidateSearch()
+    return publicSettings()
+  })
+
+  ipcMain.handle('settings:remove-library', async (_event, folder: string) => {
+    if (typeof folder !== 'string' || !folder.trim()) throw new Error('Choose a folder')
+    await removeLibrary(folder)
     invalidateSearch()
     return publicSettings()
   })
@@ -72,7 +95,7 @@ export function registerIpc(win: BrowserWindow): void {
     const suggested = suggestVault()
     if (!suggested) throw new Error('Sample vault Routine_Note was not found')
     await setVaultRoot(suggested)
-    await ensureZoneDirs(suggested)
+    await ensureZoneDirs(await currentLibraries())
     invalidateSearch()
     return publicSettings()
   })
@@ -87,11 +110,13 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle(
     'settings:save-editor',
-    async (_event, handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string, skills: Skill[]) => {
-      await saveEditorSettings(handbook, shortcuts, editorFont, skills)
+    async (_event, handbook: HandbookRule[], shortcuts: ShortcutBinding[], editorFont: string, uiFont: string, uiFontSize: number, skills: Skill[]) => {
+      await saveEditorSettings(handbook, shortcuts, editorFont, uiFont, uiFontSize, skills)
       return publicSettings()
     }
   )
+
+  ipcMain.handle('settings:usage', () => loadUsage())
 
   ipcMain.handle('settings:activate', async (_event, code: string) => {
     await saveLicenseCode(code)
@@ -100,40 +125,40 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle('vault:tree', async (_event, zone: Zone) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    return listTree(await requireVault(), zone)
+    return listTree(await requireLibraries())
   })
 
   ipcMain.handle('vault:read', async (_event, zone: Zone, rel: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    return readNote(await requireVault(), zone, rel)
+    return readNote(await requireLibraries(), rel)
   })
 
   ipcMain.handle('vault:write', async (_event, zone: Zone, rel: string, content: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const root = await requireVault()
-    await writeNote(root, zone, rel, content)
+    const root = await requireLibraries()
+    await writeNote(root, rel, content)
     invalidateSearch(zone)
   })
 
   ipcMain.handle('vault:sealed', async (_event, zone: Zone, rel: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    return noteIsSealed(await requireVault(), zone, rel)
+    return noteIsSealed(await requireLibraries(), rel)
   })
 
   ipcMain.handle('vault:seal', async (_event, zone: Zone, rel: string, password: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    await sealNote(await requireVault(), zone, rel, password)
+    await sealNote(await requireLibraries(), rel, password)
     invalidateSearch(zone)
   })
 
   ipcMain.handle('vault:unseal', async (_event, zone: Zone, rel: string, password: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    return openNote(await requireVault(), zone, rel, password)
+    return openNote(await requireLibraries(), rel, password)
   })
 
   ipcMain.handle('vault:write-sealed', async (_event, zone: Zone, rel: string, content: string, password: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    await writeSealedNote(await requireVault(), zone, rel, content, password)
+    await writeSealedNote(await requireLibraries(), rel, content, password)
     invalidateSearch(zone)
   })
 
@@ -149,44 +174,44 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle('vault:release', async (_event, zone: Zone, rel: string, password: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const plain = await releaseNote(await requireVault(), zone, rel, password)
+    const plain = await releaseNote(await requireLibraries(), rel, password)
     invalidateSearch(zone)
     return plain
   })
 
   ipcMain.handle('vault:create-folder', async (_event, zone: Zone, rel: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    await createFolder(await requireVault(), zone, rel)
+    await createFolder(await requireLibraries(), rel)
   })
 
   ipcMain.handle('vault:move', async (_event, zone: Zone, fromRel: string, toRel: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    await moveNote(await requireVault(), zone, fromRel, toRel)
+    await moveNote(await requireLibraries(), fromRel, toRel)
     invalidateSearch(zone)
   })
 
   ipcMain.handle('vault:delete', async (_event, zone: Zone, rel: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const item = await deleteToTrash(await requireVault(), zone, rel)
+    const item = await deleteToTrash(await requireLibraries(), rel)
     invalidateSearch(zone)
     return item
   })
 
   ipcMain.handle('vault:trash', async (_event, zone: Zone) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    return listTrash(await requireVault(), zone)
+    return listTrash(await requireLibraries())
   })
 
   ipcMain.handle('vault:restore', async (_event, zone: Zone, id: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const rel = await restoreTrash(await requireVault(), zone, id)
+    const rel = await restoreTrash(await requireLibraries(), id)
     invalidateSearch(zone)
     return rel
   })
 
   ipcMain.handle('vault:empty-trash', async (_event, zone: Zone) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    await emptyTrash(await requireVault(), zone)
+    await emptyTrash(await requireLibraries())
   })
 
   ipcMain.handle('vault:remember', async (_event, zone: Zone, rel: string | null) => {
@@ -198,32 +223,33 @@ export function registerIpc(win: BrowserWindow): void {
     'vault:save-image',
     async (_event, zone: Zone, noteRel: string, filename: string, bytes: Uint8Array) => {
       if (!isZone(zone)) throw new Error('Invalid zone')
-      return saveImage(await requireVault(), zone, noteRel, filename, Buffer.from(bytes))
+      return saveImage(await requireLibraries(), noteRel, filename, Buffer.from(bytes))
     }
   )
 
   ipcMain.handle('vault:reveal', async (_event, zone: Zone, rel: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const abs = await absoluteNotePath(await requireVault(), zone, rel)
+    const abs = await absoluteNotePath(await requireLibraries(), rel)
     shell.showItemInFolder(abs)
   })
 
   ipcMain.handle('vault:open-root', async (_event, zone: Zone) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const root = await zoneDirectory(await requireVault(), zone)
+    const root = await zoneDirectory(await requireLibraries())
     const error = await shell.openPath(root)
     if (error) throw new Error(error)
   })
 
   ipcMain.handle('vault:copy-path', async (_event, zone: Zone, rel: string, kind: 'absolute' | 'relative') => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const abs = await absoluteNotePath(await requireVault(), zone, rel)
-    copyText(kind === 'absolute' ? abs : rel)
+    const libraries = await requireLibraries()
+    const abs = await absoluteNotePath(libraries, rel)
+    copyText(kind === 'absolute' ? abs : innerRelative(libraries, rel))
   })
 
   ipcMain.handle('vault:copy-entry', async (_event, zone: Zone, rel: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const abs = await absoluteNotePath(await requireVault(), zone, rel)
+    const abs = await absoluteNotePath(await requireLibraries(), rel)
     await copyFiles([abs])
   })
 
@@ -231,14 +257,14 @@ export function registerIpc(win: BrowserWindow): void {
 
   ipcMain.handle('vault:paste', async (_event, zone: Zone, parentRel: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    const root = await requireVault()
-    await pasteEntries(root, zone, parentRel, filesToPaste())
+    const root = await requireLibraries()
+    await pasteEntries(root, parentRel, filesToPaste())
     invalidateSearch(zone)
   })
 
   ipcMain.handle('vault:search', async (_event, zone: Zone, query: string) => {
     if (!isZone(zone)) throw new Error('Invalid zone')
-    return searchNotes(await requireVault(), zone, query)
+    return searchNotes(await requireLibraries(), query)
   })
 
   ipcMain.handle('chat:desk', async (_event, zone: Zone) => {
@@ -277,7 +303,7 @@ export function registerIpc(win: BrowserWindow): void {
     if (!profile?.apiKey || !profile.baseURL || !profile.model) {
       throw new Error('Add an API URL, key, and model in Settings')
     }
-    const vaultRoot = await requireVault()
+    const libraries = await requireLibraries()
     const history = await readSession(zone, sessionId)
     const controller = new AbortController()
     runs.set(sessionId, controller)
@@ -288,7 +314,7 @@ export function registerIpc(win: BrowserWindow): void {
       const messages = await runAgent({
         zone,
         sessionId,
-        vaultRoot,
+        libraries,
         baseURL: profile.baseURL,
         apiKey: profile.apiKey,
         model: profile.model,

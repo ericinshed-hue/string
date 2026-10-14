@@ -8,6 +8,7 @@
   --line: rgba(40, 36, 30, 0.08);
   --accent: #b08968;
   --editor: #fffcf8;
+  --settings-solid: #ffffff;
   --shadow: 0 18px 50px rgba(60, 46, 30, 0.08);
   --thumb: #fffdfb;
   --ui-font: "Times New Roman", Times, "Songti SC", "SimSun", serif;
@@ -26,6 +27,7 @@
   --line: rgba(255, 255, 255, 0.08);
   --accent: #8ea6c9;
   --editor: #1b1b1e;
+  --settings-solid: #212121;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
   --thumb: #2a2a30;
 }
@@ -162,8 +164,10 @@ button {
 
 .tree-slot { position: relative; width: 252px; border-right: 1px solid var(--line); }
 .app.tree-closed .tree-slot { opacity: 0; border-right-color: transparent; }
-body.tree-resizing .tree-slot { transition: none; }
-body.tree-resizing, body.tree-resizing * { cursor: col-resize !important; user-select: none !important; }
+body.tree-resizing .tree-slot,
+body.drawer-resizing .drawer-slot { transition: none; }
+body.tree-resizing, body.tree-resizing *,
+body.drawer-resizing, body.drawer-resizing * { cursor: col-resize !important; user-select: none !important; }
 .tree-resizer {
   position: absolute;
   top: 0;
@@ -175,11 +179,22 @@ body.tree-resizing, body.tree-resizing * { cursor: col-resize !important; user-s
 }
 .tree-resizer:hover,
 body.tree-resizing .tree-resizer { background: color-mix(in srgb, var(--accent) 55%, transparent); }
-.drawer-slot { width: 0; }
-.app.drawer-open .drawer-slot { width: 380px; border-left: 1px solid var(--line); }
+.drawer-slot { position: relative; width: 0; }
+.app.drawer-open .drawer-slot { border-left: 1px solid var(--line); }
+.drawer-resizer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 3;
+}
+.drawer-resizer:hover,
+body.drawer-resizing .drawer-resizer { background: color-mix(in srgb, var(--accent) 55%, transparent); }
 
 .tree, .drawer { height: 100%; display: flex; flex-direction: column; background: color-mix(in srgb, var(--bg) 92%, var(--bg-soft)); }
-.drawer { width: 380px; }
+.drawer { width: 100%; }
 
 .tree-tools, .drawer-head {
   display: flex;
@@ -187,6 +202,9 @@ body.tree-resizing .tree-resizer { background: color-mix(in srgb, var(--accent) 
   align-items: center;
   padding: 8px 10px;
 }
+
+.tree-tools { flex-wrap: nowrap; }
+.tree-tools button { white-space: nowrap; flex: none; }
 
 .tree-scroll, .drawer-log { flex: 1; overflow: auto; min-height: 0; }
 .tree-empty { color: var(--muted); padding: 18px 16px; margin: 0; line-height: 1.6; }
@@ -417,6 +435,7 @@ body.tree-resizing .tree-resizer { background: color-mix(in srgb, var(--accent) 
 .modal-backdrop {
   position: fixed;
   inset: 0;
+  z-index: 30;
   background: rgba(0, 0, 0, 0.22);
   display: flex;
   align-items: flex-start;
@@ -444,38 +463,93 @@ body.tree-resizing .tree-resizer { background: color-mix(in srgb, var(--accent) 
 .search-hit small { color: var(--muted); }
 
 .settings-modal {
-  width: min(760px, calc(100% - 48px));
-  max-height: 76vh;
+  width: min(860px, calc(100% - 48px));
+  min-width: min(860px, calc(100% - 48px));
+  max-width: min(860px, calc(100% - 48px));
+  height: min(680px, 78vh);
+  min-height: min(680px, 78vh);
+  max-height: min(680px, 78vh);
+  flex: none;
   display: flex;
   padding: 0;
   overflow: hidden;
-  background: var(--bg-elev);
+  background: transparent;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
 }
 .settings-nav {
-  width: 168px;
+  width: 232px;
   flex: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 16px 10px;
+  gap: 2px;
+  padding: 12px 10px 14px;
   border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg) 88%, var(--bg-soft));
+  background: color-mix(in srgb, var(--bg-soft) 82%, var(--settings-solid));
+  overflow: auto;
 }
-.settings-nav button {
-  text-align: left;
+.settings-close {
+  width: 32px;
+  height: 32px;
+  align-self: flex-start;
+  margin: 0 0 8px 2px;
   border-radius: 8px;
-  padding: 8px 10px;
+  font-size: 20px;
+  line-height: 1;
   color: var(--muted);
 }
-.settings-nav button.on { color: var(--text); background: var(--bg-soft); }
-.settings-nav-updates { margin-top: auto; }
-.settings-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.settings-page { flex: 1; overflow: auto; padding: 22px 22px 8px; }
-.settings-page h2 { margin: 0 0 18px; font-size: 28px; font-weight: 600; }
-.settings-main .modal-actions { padding: 12px 22px 18px; }
+.settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--text);
+}
+.settings-nav button.on { background: color-mix(in srgb, var(--text) 8%, transparent); }
+.settings-nav-icon { width: 20px; height: 20px; flex: none; }
+.settings-nav-updates { margin-top: 8px; }
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--settings-solid);
+}
+.settings-page { flex: 1; min-height: 0; overflow: auto; padding: 22px 28px 12px; }
+.settings-page h2 {
+  margin: 0 0 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 18px;
+  font-weight: 600;
+}
+.settings-main .modal-actions {
+  padding: 12px 28px 16px;
+  background: var(--settings-solid);
+  border-top: 1px solid var(--line);
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.setting-row strong { display: block; font-weight: 600; color: var(--text); }
+.setting-row p { margin: 3px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.setting-row select, .setting-row button { flex: none; }
+.setting-path {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  word-break: break-all;
+}
+.setting-row .setting-path { flex: 1; min-width: 0; }
 .settings-modal h2 { margin: 0 0 14px; font-weight: 600; }
 .field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; color: var(--muted); font-size: 13px; }
 .field-hint, .rule-preview { margin: 0; font-size: 12px; line-height: 1.5; }
@@ -547,6 +621,7 @@ body.tree-resizing .tree-resizer { background: color-mix(in srgb, var(--accent) 
 
 .toast {
   position: fixed;
+  z-index: 50;
   bottom: 28px;
   left: 50%;
   transform: translateX(-50%);

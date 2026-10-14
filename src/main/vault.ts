@@ -1,22 +1,37 @@
 import { randomUUID } from 'crypto'
 import { promises as fs } from 'fs'
 import path from 'path'
-import type { TrashItem, TreeNode, Zone } from '../shared/types'
+import { libraryId } from '../shared/library'
+import type { TrashItem, TreeNode } from '../shared/types'
 import {
   assertInside,
   isReservedRel,
   normalizePosix,
   relativeLink,
   rewriteMarkdownLinks,
-  toPosixRel,
-  zoneFolder
+  toPosixRel
 } from '../shared/paths'
 import { isSealed, openText, SEAL_MAGIC, sealText } from './seal'
 
 type TrashMeta = TrashItem
 
-function zoneRoot(vaultRoot: string, zone: Zone): string {
-  return path.join(vaultRoot, zoneFolder(zone))
+export { libraryId }
+
+function splitStored(libraries: string[], stored: string): { root: string; rel: string } {
+  const slash = stored.indexOf('/')
+  if (slash > 0) {
+    const id = stored.slice(0, slash)
+    const root = libraries.find((item) => libraryId(item) === id)
+    if (root) return { root, rel: stored.slice(slash + 1) }
+  }
+  const root = libraries[0]
+  if (!root) throw new Error('No library selected')
+  return { root, rel: stored }
+}
+
+function withLibrary(root: string, rel: string): string {
+  const id = libraryId(root)
+  return rel.startsWith(`${id}/`) ? rel : `${id}/${rel}`
 }
 
 async function realInside(root: string, target: string): Promise<string> {
@@ -45,10 +60,10 @@ function noteRel(rel: string): string {
   return normalized
 }
 
-async function resolveNote(vaultRoot: string, zone: Zone, rel: string): Promise<string> {
-  const root = zoneRoot(vaultRoot, zone)
-  await fs.mkdir(root, { recursive: true })
-  return realInside(root, path.resolve(root, noteRel(rel)))
+async function resolveNote(libraries: string[], rel: string): Promise<string> {
+  const located = splitStored(libraries, rel)
+  await fs.mkdir(located.root, { recursive: true })
+  return realInside(located.root, path.resolve(located.root, noteRel(located.rel)))
 }
 
 async function replaceFile(abs: string, content: string): Promise<void> {
@@ -75,34 +90,63 @@ async function replaceFile(abs: string, content: string): Promise<void> {
   if (movedAside) await fs.rm(bak, { force: true })
 }
 
-export async function ensureZoneDirs(vaultRoot: string): Promise<void> {
-  for (const zone of ['note', 'routine'] as Zone[]) {
-    const root = zoneRoot(vaultRoot, zone)
+export async function ensureZoneDirs(libraries: string[]): Promise<void> {
+  for (const root of libraries) {
+    try {
+      const stat = await fs.stat(root)
+      if (!stat.isDirectory()) continue
+    } catch {
+      continue
+    }
     await fs.mkdir(path.join(root, 'assets'), { recursive: true })
     await fs.mkdir(path.join(root, '.trash'), { recursive: true })
   }
 }
 
-export async function listTree(vaultRoot: string, zone: Zone): Promise<TreeNode[]> {
-  const root = zoneRoot(vaultRoot, zone)
-  await fs.mkdir(root, { recursive: true })
-  return readLevel(root, root)
+export async function listTree(libraries: string[]): Promise<TreeNode[]> {
+  const groups: Array<{ root: string; nodes: TreeNode[] }> = []
+  for (const root of libraries) {
+    try {
+      const stat = await fs.stat(root)
+      if (!stat.isDirectory()) continue
+    } catch {
+      continue
+    }
+    groups.push({ root, nodes: await readLevel(root, root, libraryId(root)) })
+  }
+  const counts = new Map<string, number>()
+  for (const group of groups) {
+    for (const node of group.nodes) counts.set(node.name, (counts.get(node.name) ?? 0) + 1)
+  }
+  const merged: TreeNode[] = []
+  for (const group of groups) {
+    const base = path.basename(group.root)
+    for (const node of group.nodes) {
+      if ((counts.get(node.name) ?? 0) > 1) merged.push({ ...node, name: `${node.name} (${base})` })
+      else merged.push(node)
+    }
+  }
+  merged.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+    return a.name.localeCompare(b.name, 'zh')
+  })
+  return merged
 }
 
-async function readLevel(dir: string, root: string): Promise<TreeNode[]> {
+async function readLevel(dir: string, root: string, id: string): Promise<TreeNode[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true })
   const nodes: TreeNode[] = []
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue
     if (dir === root && (entry.name === 'assets' || entry.name === '.trash')) continue
     const abs = path.join(dir, entry.name)
-    const rel = toPosixRel(root, abs)
+    const rel = `${id}/${toPosixRel(root, abs)}`
     if (entry.isDirectory()) {
       nodes.push({
         name: entry.name,
         path: rel,
         type: 'folder',
-        children: await readLevel(abs, root)
+        children: await readLevel(abs, root, id)
       })
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
       nodes.push({ name: entry.name, path: rel, type: 'file', encrypted: await fileIsSealed(abs) })
@@ -115,76 +159,81 @@ async function readLevel(dir: string, root: string): Promise<TreeNode[]> {
   return nodes
 }
 
-export async function readNote(vaultRoot: string, zone: Zone, rel: string): Promise<string> {
-  const abs = await resolveNote(vaultRoot, zone, rel)
+export async function readNote(libraries: string[], rel: string): Promise<string> {
+  const abs = await resolveNote(libraries, rel)
   const raw = await fs.readFile(abs, 'utf8')
   if (isSealed(raw)) throw new Error('This note is encrypted')
   return raw
 }
 
-export async function noteIsSealed(vaultRoot: string, zone: Zone, rel: string): Promise<boolean> {
-  const abs = await resolveNote(vaultRoot, zone, rel)
+export async function noteIsSealed(libraries: string[], rel: string): Promise<boolean> {
+  const abs = await resolveNote(libraries, rel)
   return fileIsSealed(abs)
 }
 
-export async function sealNote(vaultRoot: string, zone: Zone, rel: string, password: string): Promise<void> {
-  const abs = await resolveNote(vaultRoot, zone, rel)
+export async function sealNote(libraries: string[], rel: string, password: string): Promise<void> {
+  const abs = await resolveNote(libraries, rel)
   const raw = await fs.readFile(abs, 'utf8')
   if (isSealed(raw)) throw new Error('This note is already encrypted')
   await replaceFile(abs, await sealText(raw, password))
 }
 
-export async function openNote(vaultRoot: string, zone: Zone, rel: string, password: string): Promise<string> {
-  const abs = await resolveNote(vaultRoot, zone, rel)
+export async function openNote(libraries: string[], rel: string, password: string): Promise<string> {
+  const abs = await resolveNote(libraries, rel)
   return openText(await fs.readFile(abs, 'utf8'), password)
 }
 
-export async function writeSealedNote(vaultRoot: string, zone: Zone, rel: string, content: string, password: string): Promise<void> {
-  const abs = await resolveNote(vaultRoot, zone, rel)
+export async function writeSealedNote(libraries: string[], rel: string, content: string, password: string): Promise<void> {
+  const abs = await resolveNote(libraries, rel)
   const raw = await fs.readFile(abs, 'utf8')
   if (!isSealed(raw)) throw new Error('This note is not encrypted')
   await openText(raw, password)
   await replaceFile(abs, await sealText(content, password))
 }
 
-export async function releaseNote(vaultRoot: string, zone: Zone, rel: string, password: string): Promise<string> {
-  const abs = await resolveNote(vaultRoot, zone, rel)
+export async function releaseNote(libraries: string[], rel: string, password: string): Promise<string> {
+  const abs = await resolveNote(libraries, rel)
   const plain = await openText(await fs.readFile(abs, 'utf8'), password)
   await replaceFile(abs, plain)
   return plain
 }
 
-export async function writeNote(vaultRoot: string, zone: Zone, rel: string, content: string): Promise<void> {
-  const normalized = noteRel(rel)
-  if (!normalized.toLowerCase().endsWith('.md')) throw new Error('Only Markdown files can be written')
-  const abs = await resolveNote(vaultRoot, zone, normalized)
+export async function writeNote(libraries: string[], rel: string, content: string): Promise<void> {
+  const inner = noteRel(splitStored(libraries, rel).rel)
+  if (!inner.toLowerCase().endsWith('.md')) throw new Error('Only Markdown files can be written')
+  const abs = await resolveNote(libraries, rel)
   if (await fileIsSealed(abs)) throw new Error('This note is encrypted')
   await fs.mkdir(path.dirname(abs), { recursive: true })
   await replaceFile(abs, content)
 }
 
-export async function createFolder(vaultRoot: string, zone: Zone, rel: string): Promise<void> {
-  const abs = await resolveNote(vaultRoot, zone, rel)
+export async function createFolder(libraries: string[], rel: string): Promise<void> {
+  const abs = await resolveNote(libraries, rel)
   await fs.mkdir(abs, { recursive: true })
 }
 
-export async function absoluteNotePath(vaultRoot: string, zone: Zone, rel: string): Promise<string> {
-  return resolveNote(vaultRoot, zone, rel)
+export async function absoluteNotePath(libraries: string[], rel: string): Promise<string> {
+  return resolveNote(libraries, rel)
 }
 
-export async function zoneDirectory(vaultRoot: string, zone: Zone): Promise<string> {
-  const root = zoneRoot(vaultRoot, zone)
+export async function zoneDirectory(libraries: string[]): Promise<string> {
+  const root = libraries[0]
+  if (!root) throw new Error('No library selected')
   await fs.mkdir(root, { recursive: true })
   return root
 }
 
-export async function pasteEntries(vaultRoot: string, zone: Zone, parentRel: string, sources: string[]): Promise<void> {
+export function innerRelative(libraries: string[], stored: string): string {
+  return splitStored(libraries, stored).rel
+}
+
+export async function pasteEntries(libraries: string[], parentRel: string, sources: string[]): Promise<void> {
   if (!sources.length) throw new Error('Clipboard has no files')
-  const root = zoneRoot(vaultRoot, zone)
+  const root = splitStored(libraries, parentRel).root
   await fs.mkdir(root, { recursive: true })
   let destDir = root
   if (parentRel) {
-    destDir = await resolveNote(vaultRoot, zone, parentRel)
+    destDir = await resolveNote(libraries, parentRel)
     const info = await fs.stat(destDir)
     if (!info.isDirectory()) throw new Error('Paste into a folder')
   }
@@ -247,9 +296,12 @@ async function rewriteCopiedTree(currentDest: string, srcRoot: string, destRoot:
   }
 }
 
-export async function moveNote(vaultRoot: string, zone: Zone, fromRel: string, toRel: string): Promise<void> {
-  const from = await resolveNote(vaultRoot, zone, fromRel)
-  const to = await resolveNote(vaultRoot, zone, toRel)
+export async function moveNote(libraries: string[], fromRel: string, toRel: string): Promise<void> {
+  const fromRoot = path.resolve(splitStored(libraries, fromRel).root)
+  const toRoot = path.resolve(splitStored(libraries, toRel).root)
+  if (fromRoot.toLowerCase() !== toRoot.toLowerCase()) throw new Error('A note cannot move to another library')
+  const from = await resolveNote(libraries, fromRel)
+  const to = await resolveNote(libraries, toRel)
   const info = await fs.stat(from)
   if (info.isFile() && !to.toLowerCase().endsWith('.md')) throw new Error('Notes must end in .md')
   const inward = path.relative(from, to)
@@ -292,14 +344,13 @@ async function rewriteTreeLinks(current: string, oldRoot: string, newRoot: strin
 }
 
 export async function saveImage(
-  vaultRoot: string,
-  zone: Zone,
+  libraries: string[],
   noteRelPath: string,
   filename: string,
   data: Buffer
 ): Promise<string> {
-  const noteAbs = await resolveNote(vaultRoot, zone, noteRelPath)
-  const root = zoneRoot(vaultRoot, zone)
+  const noteAbs = await resolveNote(libraries, noteRelPath)
+  const root = splitStored(libraries, noteRelPath).root
   const assets = path.join(root, 'assets')
   await fs.mkdir(assets, { recursive: true })
   const safe = filename.replace(/[^\w.\-\u4e00-\u9fff]+/g, '_').replace(/^_+/, '') || 'image.png'
@@ -309,17 +360,17 @@ export async function saveImage(
   return relativeLink(noteAbs, assetAbs)
 }
 
-export async function deleteToTrash(vaultRoot: string, zone: Zone, rel: string): Promise<TrashItem> {
-  const abs = await resolveNote(vaultRoot, zone, rel)
+export async function deleteToTrash(libraries: string[], rel: string): Promise<TrashItem> {
+  const abs = await resolveNote(libraries, rel)
   const info = await fs.stat(abs)
-  const root = zoneRoot(vaultRoot, zone)
+  const root = splitStored(libraries, rel).root
   const id = randomUUID()
   const bucket = path.join(root, '.trash', id)
   await fs.mkdir(bucket, { recursive: true })
   const meta: TrashMeta = {
     id,
     name: path.basename(abs),
-    originalRelativePath: toPosixRel(root, abs),
+    originalRelativePath: withLibrary(root, toPosixRel(root, abs)),
     deletedAt: new Date().toISOString(),
     kind: info.isDirectory() ? 'folder' : 'file'
   }
@@ -329,38 +380,58 @@ export async function deleteToTrash(vaultRoot: string, zone: Zone, rel: string):
   return meta
 }
 
-export async function listTrash(vaultRoot: string, zone: Zone): Promise<TrashItem[]> {
-  const dir = path.join(zoneRoot(vaultRoot, zone), '.trash')
-  await fs.mkdir(dir, { recursive: true })
-  const entries = await fs.readdir(dir, { withFileTypes: true })
+export async function listTrash(libraries: string[]): Promise<TrashItem[]> {
   const items: TrashItem[] = []
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
+  for (const root of libraries) {
+    const dir = path.join(root, '.trash')
+    let entries: Array<{ name: string; isDirectory: () => boolean }>
     try {
-      const raw = await fs.readFile(path.join(dir, entry.name, 'meta.json'), 'utf8')
-      items.push(JSON.parse(raw) as TrashItem)
+      entries = await fs.readdir(dir, { withFileTypes: true })
     } catch {
       continue
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      try {
+        const raw = await fs.readFile(path.join(dir, entry.name, 'meta.json'), 'utf8')
+        const meta = JSON.parse(raw) as TrashItem
+        items.push({ ...meta, originalRelativePath: withLibrary(root, meta.originalRelativePath) })
+      } catch {
+        continue
+      }
     }
   }
   items.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt))
   return items
 }
 
-export async function restoreTrash(vaultRoot: string, zone: Zone, id: string): Promise<string> {
+export async function restoreTrash(libraries: string[], id: string): Promise<string> {
   if (!/^[\w-]+$/.test(id)) throw new Error('That trash item is invalid')
-  const root = zoneRoot(vaultRoot, zone)
-  const bucket = path.join(root, '.trash', id)
+  let bucket = ''
+  let root = ''
+  for (const library of libraries) {
+    const candidate = path.join(library, '.trash', id)
+    try {
+      await fs.stat(path.join(candidate, 'meta.json'))
+      bucket = candidate
+      root = library
+      break
+    } catch {
+      continue
+    }
+  }
+  if (!bucket) throw new Error('That trash item is gone')
   const meta = JSON.parse(await fs.readFile(path.join(bucket, 'meta.json'), 'utf8')) as TrashMeta
+  meta.originalRelativePath = withLibrary(root, meta.originalRelativePath)
   const payloadName = meta.kind === 'folder' ? 'payload' : `payload${path.extname(meta.name)}`
   const payload = path.join(bucket, payloadName)
   let destRel = meta.originalRelativePath
-  let dest = await resolveNote(vaultRoot, zone, destRel)
+  let dest = await resolveNote(libraries, destRel)
   if (await exists(dest)) {
     const ext = path.extname(destRel)
     const base = ext ? destRel.slice(0, -ext.length) : destRel
     destRel = `${base}-restored${ext}`
-    dest = await resolveNote(vaultRoot, zone, destRel)
+    dest = await resolveNote(libraries, destRel)
   }
   await fs.mkdir(path.dirname(dest), { recursive: true })
   await fs.rename(payload, dest)
@@ -368,10 +439,17 @@ export async function restoreTrash(vaultRoot: string, zone: Zone, id: string): P
   return destRel
 }
 
-export async function emptyTrash(vaultRoot: string, zone: Zone): Promise<void> {
-  const dir = path.join(zoneRoot(vaultRoot, zone), '.trash')
-  await fs.rm(dir, { recursive: true, force: true })
-  await fs.mkdir(dir, { recursive: true })
+export async function emptyTrash(libraries: string[]): Promise<void> {
+  for (const root of libraries) {
+    const dir = path.join(root, '.trash')
+    await fs.rm(dir, { recursive: true, force: true })
+    try {
+      const stat = await fs.stat(root)
+      if (stat.isDirectory()) await fs.mkdir(dir, { recursive: true })
+    } catch {
+      continue
+    }
+  }
 }
 
 async function exists(target: string): Promise<boolean> {
@@ -401,19 +479,25 @@ async function fileIsSealed(abs: string): Promise<boolean> {
 }
 
 export async function walkNotes(
-  vaultRoot: string,
-  zone: Zone
+  libraries: string[]
 ): Promise<Array<{ path: string; name: string; content: string }>> {
-  const root = zoneRoot(vaultRoot, zone)
-  await fs.mkdir(root, { recursive: true })
   const files: Array<{ path: string; name: string; content: string }> = []
-  await walk(root, root, files)
+  for (const root of libraries) {
+    try {
+      const stat = await fs.stat(root)
+      if (!stat.isDirectory()) continue
+    } catch {
+      continue
+    }
+    await walk(root, root, libraryId(root), files)
+  }
   return files
 }
 
 async function walk(
   dir: string,
   root: string,
+  id: string,
   files: Array<{ path: string; name: string; content: string }>
 ): Promise<void> {
   const entries = await fs.readdir(dir, { withFileTypes: true })
@@ -422,11 +506,11 @@ async function walk(
     if (dir === root && entry.name === 'assets') continue
     const abs = path.join(dir, entry.name)
     if (entry.isDirectory()) {
-      await walk(abs, root, files)
+      await walk(abs, root, id, files)
     } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
       const content = await fs.readFile(abs, 'utf8')
       files.push({
-        path: toPosixRel(root, abs),
+        path: `${id}/${toPosixRel(root, abs)}`,
         name: entry.name,
         content: isSealed(content) ? '' : content
       })

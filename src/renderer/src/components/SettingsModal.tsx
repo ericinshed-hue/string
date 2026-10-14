@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
-import { EDITOR_FONTS, editorFontStack } from '@shared/fonts'
+import { EDITOR_FONTS, UI_FONT_SIZES, editorFontStack } from '@shared/fonts'
 import { chordFromEvent, expandRule, SHORTCUT_LABELS } from '@shared/handbook'
-import type { HandbookRule, ProfileInput, PublicProfile, PublicSettings, ShortcutBinding, Skill } from '@shared/types'
+import type { HandbookRule, ProfileInput, PublicProfile, PublicSettings, ShortcutBinding, Skill, UsageStats } from '@shared/types'
 
-type Page = 'vault' | 'font' | 'api' | 'snippets' | 'shortcuts' | 'prompt' | 'skills'
+type Page = 'vault' | 'font' | 'appfont' | 'api' | 'usage' | 'account' | 'snippets' | 'shortcuts' | 'prompt' | 'skills'
 
 const PAGES: Array<{ id: Page; label: string; title: string }> = [
   { id: 'vault', label: 'Vault', title: 'Vault' },
   { id: 'font', label: 'Note font', title: 'Note font' },
+  { id: 'appfont', label: 'App font', title: 'App font' },
   { id: 'api', label: 'API', title: 'API' },
+  { id: 'usage', label: 'API usage', title: 'API usage' },
+  { id: 'account', label: 'Account', title: 'Account' },
   { id: 'snippets', label: 'Snippets', title: 'Snippets' },
   { id: 'shortcuts', label: 'Shortcuts', title: 'Shortcuts' },
   { id: 'prompt', label: 'System prompt', title: 'System prompt' },
@@ -30,6 +33,9 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
   const [activeId, setActiveId] = useState(settings.activeProfileId)
   const [prompt, setPrompt] = useState(settings.systemPrompt)
   const [editorFont, setEditorFont] = useState(settings.editorFont)
+  const [uiFont, setUiFont] = useState(settings.uiFont)
+  const [uiFontSize, setUiFontSize] = useState(settings.uiFontSize)
+  const [usage, setUsage] = useState<UsageStats | null>(null)
   const [handbook, setHandbook] = useState<HandbookRule[]>(() => settings.handbook.map((rule) => ({ ...rule })))
   const [shortcuts, setShortcuts] = useState<ShortcutBinding[]>(() => settings.shortcuts.map((item) => ({ ...item })))
   const [skills, setSkills] = useState<Skill[]>(() => (settings.skills ?? []).map((skill) => ({ ...skill })))
@@ -41,6 +47,11 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
     const timer = window.setInterval(() => setNow(new Date()), 1000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (page !== 'usage') return
+    void window.routine.usage().then(setUsage).catch(() => setUsage(null))
+  }, [page])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -73,23 +84,34 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
     return () => window.removeEventListener('keydown', onKey, true)
   }, [recording, shortcuts, onToast])
 
-  async function chooseRoot(): Promise<void> {
+  async function addFolder(): Promise<void> {
     try {
-      const next = await window.routine.pickRoot()
+      const next = await window.routine.addLibrary()
       if (next) {
         window.routine.rewatch()
         onSaved(next)
-        onToast('Vault updated')
+        onToast('Folder added')
       }
     } catch (error) {
-      onToast(error instanceof Error ? error.message : 'Could not choose a folder')
+      onToast(error instanceof Error ? error.message : 'Could not add a folder')
+    }
+  }
+
+  async function removeFolder(folder: string): Promise<void> {
+    try {
+      const next = await window.routine.removeLibrary(folder)
+      window.routine.rewatch()
+      onSaved(next)
+      onToast('Folder removed')
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : 'Could not remove that folder')
     }
   }
 
   async function save(): Promise<void> {
     try {
       await window.routine.saveProfiles(profiles, activeId, prompt)
-      const next = await window.routine.saveEditor(handbook, shortcuts, editorFont, skills)
+      const next = await window.routine.saveEditor(handbook, shortcuts, editorFont, uiFont, uiFontSize, skills)
       onSaved(next)
       onToast('Settings saved')
       onClose()
@@ -104,30 +126,48 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="settings-modal" onMouseDown={(event) => event.stopPropagation()}>
         <nav className="settings-nav">
+          <button className="settings-close" onClick={onClose} aria-label="Close">×</button>
           {PAGES.map((item) => (
             <button
               key={item.id}
               className={item.id === page ? 'on' : ''}
               onClick={() => setPage(item.id)}
             >
+              <NavIcon id={item.id} />
               {item.label}
             </button>
           ))}
-          <button className="settings-nav-updates" onClick={onCheckUpdates}>Check for updates</button>
+          <button className="settings-nav-updates" onClick={onCheckUpdates}>
+            <NavIcon id="updates" />
+            Check for updates
+          </button>
         </nav>
         <div className="settings-main">
           <div className="settings-page">
             <h2>{current.title}</h2>
             {page === 'vault' ? (
-              <label className="field">
-                <div className="field-row">
-                  <code>{settings.vaultRoot ?? 'None selected'}</code>
-                  <button onClick={() => void chooseRoot()}>Change</button>
+              <>
+                <div className="setting-row">
+                  <div>
+                    <strong>Folders</strong>
+                    <p>Day and Night share this list. Each folder’s contents appear together.</p>
+                  </div>
+                  <button onClick={() => void addFolder()}>Add</button>
                 </div>
-              </label>
+                {(settings.libraries ?? []).map((folder) => (
+                  <div className="setting-row" key={folder}>
+                    <p className="setting-path">{folder}</p>
+                    <button onClick={() => void removeFolder(folder)}>Remove</button>
+                  </div>
+                ))}
+              </>
             ) : null}
             {page === 'font' ? (
-              <label className="field">
+              <div className="setting-row">
+                <div>
+                  <strong>Editor font</strong>
+                  <p style={{ fontFamily: editorFontStack(editorFont) }}>The quick brown fox jumps over the lazy dog.</p>
+                </div>
                 <select value={editorFont} onChange={(event) => setEditorFont(event.target.value)}>
                   {EDITOR_FONTS.map((font) => (
                     <option key={font} value={font} style={{ fontFamily: editorFontStack(font) }}>
@@ -135,10 +175,58 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
                     </option>
                   ))}
                 </select>
-                <p className="field-hint" style={{ fontFamily: editorFontStack(editorFont) }}>
-                  The quick brown fox jumps over the lazy dog.
-                </p>
-              </label>
+              </div>
+            ) : null}
+            {page === 'appfont' ? (
+              <>
+                <div className="setting-row">
+                  <div>
+                    <strong>Font</strong>
+                    <p style={{ fontFamily: editorFontStack(uiFont) }}>Buttons, menus, and this window.</p>
+                  </div>
+                  <select value={uiFont} onChange={(event) => setUiFont(event.target.value)}>
+                    {EDITOR_FONTS.map((font) => (
+                      <option key={font} value={font} style={{ fontFamily: editorFontStack(font) }}>{font}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="setting-row">
+                  <div>
+                    <strong>Size</strong>
+                    <p>Does not change the note text.</p>
+                  </div>
+                  <select value={uiFontSize} onChange={(event) => setUiFontSize(Number(event.target.value))}>
+                    {UI_FONT_SIZES.map((size) => (
+                      <option key={size} value={size}>{size} px</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : null}
+            {page === 'usage' ? (
+              <>
+                <p className="field-hint">Counted on this computer after each assistant request. Some APIs omit token counts.</p>
+                <div className="setting-row"><div><strong>Requests</strong></div><span>{usage?.requests ?? 0}</span></div>
+                <div className="setting-row"><div><strong>Prompt tokens</strong></div><span>{usage?.promptTokens ?? 0}</span></div>
+                <div className="setting-row"><div><strong>Completion tokens</strong></div><span>{usage?.completionTokens ?? 0}</span></div>
+                <div className="setting-row"><div><strong>Total tokens</strong></div><span>{(usage?.promptTokens ?? 0) + (usage?.completionTokens ?? 0)}</span></div>
+                <div className="setting-row"><div><strong>Last request</strong></div><span>{usage?.updatedAt ? new Date(usage.updatedAt).toLocaleString() : 'None yet'}</span></div>
+              </>
+            ) : null}
+            {page === 'account' ? (
+              settings.account ? (
+                <>
+                  <div className="setting-row"><div><strong>Name</strong></div><span>{settings.account.name}</span></div>
+                  <div className="setting-row"><div><strong>Email</strong></div><span>{settings.account.email}</span></div>
+                  <div className="setting-row"><div><strong>Expires</strong></div><span>{settings.account.exp ?? 'No expiry'}</span></div>
+                  <div className="setting-row"><div><strong>Version</strong></div><span>{settings.version}</span></div>
+                </>
+              ) : (
+                <>
+                  <p className="field-hint">This copy has no activation record. A packaged install asks for a code on first launch.</p>
+                  <div className="setting-row"><div><strong>Version</strong></div><span>{settings.version}</span></div>
+                </>
+              )
             ) : null}
             {page === 'api' ? (
         <div className="field">
@@ -297,7 +385,6 @@ export function SettingsModal({ settings, onClose, onSaved, onToast, onCheckUpda
             ) : null}
           </div>
           <div className="modal-actions">
-            <button onClick={onClose}>Cancel</button>
             <button className="primary" onClick={() => void save()}>Save</button>
           </div>
         </div>
@@ -338,4 +425,101 @@ function toDraft(profile: PublicProfile): Draft {
     apiKey: '',
     keepKey: profile.hasKey
   }
+}
+
+function NavIcon({ id }: { id: Page | 'updates' }) {
+  const common = {
+    className: 'settings-nav-icon',
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2.15,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true
+  }
+  if (id === 'appfont') {
+    return (
+      <svg {...common}>
+        <path d="M4 6h16M4 12h10M4 18h16" />
+      </svg>
+    )
+  }
+  if (id === 'usage') {
+    return (
+      <svg {...common}>
+        <path d="M5 19V10M12 19V5M19 19v-7" />
+      </svg>
+    )
+  }
+  if (id === 'account') {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="8" r="3" />
+        <path d="M5.5 19c1.4-3 3.6-4.5 6.5-4.5s5.1 1.5 6.5 4.5" />
+      </svg>
+    )
+  }
+  if (id === 'vault') {
+    return (
+      <svg {...common}>
+        <path d="M4 8.5h16v10.5H4z" />
+        <path d="M4 8.5l2.2-3h5.2l1.4 2" />
+      </svg>
+    )
+  }
+  if (id === 'font') {
+    return (
+      <svg {...common}>
+        <path d="M5 19L12 5l7 14" />
+        <path d="M8.2 14h7.6" />
+      </svg>
+    )
+  }
+  if (id === 'api') {
+    return (
+      <svg {...common}>
+        <circle cx="7" cy="12" r="2.2" />
+        <circle cx="17" cy="8" r="2.2" />
+        <circle cx="17" cy="16" r="2.2" />
+        <path d="M9.1 11.2l5.6-2.4M9.1 12.8l5.6 2.4" />
+      </svg>
+    )
+  }
+  if (id === 'snippets') {
+    return (
+      <svg {...common}>
+        <path d="M9 7L4.5 12 9 17" />
+        <path d="M15 7l4.5 5L15 17" />
+      </svg>
+    )
+  }
+  if (id === 'shortcuts') {
+    return (
+      <svg {...common}>
+        <rect x="3.5" y="7" width="17" height="11" rx="2" />
+        <path d="M7 11h.01M11 11h.01M15 11h.01M8 14.5h8" />
+      </svg>
+    )
+  }
+  if (id === 'prompt') {
+    return (
+      <svg {...common}>
+        <path d="M5 6.5h14v8.5H9l-4 3.2z" />
+      </svg>
+    )
+  }
+  if (id === 'skills') {
+    return (
+      <svg {...common}>
+        <path d="M12 3.2l1.5 4.6L18.2 9.2l-4.7 1.4L12 15.2l-1.5-4.6L5.8 9.2l4.7-1.4z" />
+      </svg>
+    )
+  }
+  return (
+    <svg {...common}>
+      <path d="M20 12a8 8 0 1 1-2.3-5.6" />
+      <path d="M20 4.5V9h-4.5" />
+    </svg>
+  )
 }

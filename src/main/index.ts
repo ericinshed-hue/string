@@ -3,11 +3,11 @@ import { existsSync } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import chokidar, { type FSWatcher } from 'chokidar'
-import { normalizePosix, zoneFolder } from '../shared/paths'
-import type { Zone } from '../shared/types'
+import { libraryId } from '../shared/library'
+import { normalizePosix } from '../shared/paths'
 import { registerIpc } from './ipc'
 import { invalidateSearch } from './search'
-import { currentVault } from './settings'
+import { currentLibraries } from './settings'
 import { installUpdate, registerUpdater } from './update'
 
 protocol.registerSchemesAsPrivileged([
@@ -88,24 +88,21 @@ function watchVault(win: BrowserWindow): void {
   const arm = async (): Promise<void> => {
     await watcher?.close()
     watcher = null
-    const root = await currentVault()
-    if (!root) return
-    const targets = (['note', 'routine'] as Zone[])
-      .map((zone) => path.join(root, zoneFolder(zone)))
-      .filter((dir) => existsSync(dir))
+    const libraries = await currentLibraries()
+    const targets = libraries.filter((dir) => existsSync(dir))
     if (targets.length === 0) return
     watcher = chokidar.watch(targets, {
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 180, pollInterval: 40 },
       ignored: /(^|[\\/])\.|(\.tmp|\.bak)$/
     })
-    const notify = (filePath: string): void => {
+    const notify = (): void => {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
-        const zone = zoneOf(root, filePath)
-        if (!zone) return
-        invalidateSearch(zone)
-        if (!win.isDestroyed()) win.webContents.send('vault:changed', zone)
+        invalidateSearch()
+        if (win.isDestroyed()) return
+        win.webContents.send('vault:changed', 'note')
+        win.webContents.send('vault:changed', 'routine')
       }, 120)
     }
     watcher.on('add', notify).on('change', notify).on('unlink', notify).on('addDir', notify).on('unlinkDir', notify)
@@ -116,28 +113,21 @@ function watchVault(win: BrowserWindow): void {
   })
 }
 
-function zoneOf(root: string, filePath: string): Zone | null {
-  for (const zone of ['note', 'routine'] as Zone[]) {
-    const zoneRoot = path.join(root, zoneFolder(zone))
-    const rel = path.relative(zoneRoot, filePath)
-    if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return zone
-  }
-  return null
-}
-
 app.setPath('userData', path.join(app.getPath('appData'), 'routine-notes'))
 app.setAppUserModelId('com.string.notes')
 
 app.whenReady().then(() => {
   protocol.handle('vault', async (request) => {
-    const root = await currentVault()
-    if (!root) return new Response('missing vault', { status: 404 })
+    const libraries = await currentLibraries()
+    if (!libraries.length) return new Response('missing vault', { status: 404 })
     const url = new URL(request.url)
     const rel = normalizePosix(decodeURIComponent(url.pathname).replace(/^\/+/, ''))
-    if (!rel || (!rel.startsWith('Note/') && !rel.startsWith('Routine/'))) {
-      return new Response('forbidden', { status: 403 })
-    }
-    const abs = path.resolve(root, ...rel.split('/'))
+    const slash = rel?.indexOf('/') ?? -1
+    const id = rel && slash > 0 ? rel.slice(0, slash) : ''
+    const inner = rel && slash > 0 ? rel.slice(slash + 1) : ''
+    const root = libraries.find((item) => libraryId(item) === id)
+    if (!root || !inner) return new Response('forbidden', { status: 403 })
+    const abs = path.resolve(root, ...inner.split('/'))
     const relative = path.relative(path.resolve(root), abs)
     if (relative.startsWith('..') || path.isAbsolute(relative)) return new Response('forbidden', { status: 403 })
     if (!existsSync(abs)) return new Response('missing', { status: 404 })
